@@ -105,6 +105,8 @@ export const en = {
     'New chats and regenerated replies use this model. Third-party providers do not offer web search or the file API.',
   settingsActiveModelEmpty: 'No model selected',
   settingsActiveModelSearch: 'Search models or providers',
+  storageUnavailable:
+    'This browser blocks local storage (private window, blocked site data, or opened from file://). Provider settings live in memory only and will be lost on reload.',
   providerOfficialName: 'DeepSeek (official)',
   providerOfficialDescription:
     'Built-in provider using the API key from Data settings; supports thinking, web search and attachments.',

@@ -126,6 +126,24 @@ const write = (key: string, value: unknown) => {
   }
 }
 
+/**
+ * 本地存储是否可写：无痕窗口、禁用站点数据或 file:// 下受限时会失败，
+ * 此时配置只存在内存里，刷新即丢失，界面需要明确提示。
+ */
+export const isStorageAvailable = (): boolean => {
+  if (typeof localStorage === 'undefined') {
+    return false
+  }
+  const probe = 'deepseek-chat:storage-probe'
+  try {
+    localStorage.setItem(probe, '1')
+    localStorage.removeItem(probe)
+    return true
+  } catch {
+    return false
+  }
+}
+
 type ProvidersState = {
   providers: Provider[]
   active: ActiveModel

@@ -99,6 +99,8 @@ export const zh = {
   settingsActiveModelDescription: '新对话与重新生成使用该模型；第三方供应商不提供联网搜索与文件接口。',
   settingsActiveModelEmpty: '尚未选择模型',
   settingsActiveModelSearch: '搜索模型或供应商',
+  storageUnavailable:
+    '当前浏览器禁止了本地存储（可能是无痕窗口、禁用了站点数据，或从 file:// 打开），供应商配置只保存在内存中，刷新后会丢失。',
   providerOfficialName: '官方 DeepSeek',
   providerOfficialDescription: '内置供应商，使用数据管理中填写的 API Key，支持深度思考、联网搜索与附件。',
   providerModelCount: '{count} 个模型',

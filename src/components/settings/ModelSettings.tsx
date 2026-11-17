@@ -17,6 +17,7 @@ import { showToast } from '../base/toastState.js'
 import { useTranslate } from '../../i18n/index.js'
 import { fetchDraftModels } from '../../services/api/providerModels.js'
 import {
+  isStorageAvailable,
   OFFICIAL_MODELS,
   OFFICIAL_PROVIDER_ID,
   PROVIDER_ID_PATTERN,
@@ -48,9 +49,16 @@ export const ModelSettings = () => {
   const providers = useProviders((state) => state.providers)
   // undefined：未打开表单；null：新建；Provider：编辑
   const [editing, setEditing] = useState<Provider | null | undefined>(undefined)
+  // 挂载时探测一次本地存储；不可用时明确告知，避免刷新后配置静默丢失
+  const [storageAvailable] = useState(isStorageAvailable)
 
   return (
     <>
+      {storageAvailable ? null : (
+        <div className={styles.storageWarning} role="alert">
+          {t('storageUnavailable')}
+        </div>
+      )}
       <div className={clsx(styles.cell, styles.row)}>
         <div className={styles.text}>
           <div className={styles.label}>{t('settingsActiveModel')}</div>
