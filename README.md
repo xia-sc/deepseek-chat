@@ -19,6 +19,18 @@ pnpm dev
 
 Open http://localhost:8090.
 
+## Windows desktop build
+
+```sh
+pnpm dist:exe
+```
+
+This produces `release-app/DeepSeek-Chat-<version>-portable.exe`; double-click to run, no installation needed.
+
+- Provider and active-model settings are stored in `%APPDATA%\DeepSeek Chat\config.json`, which you can back up or edit by hand; Settings → Models shows the full path and can open its folder.
+- Conversations and attachments live in the Electron user data directory. The app serves the page on a fixed `127.0.0.1:37821`, so data survives restarts and reloads; if that port is taken the app reports it instead of switching ports.
+- For development, run `pnpm build` once and then `pnpm desktop` to launch the desktop shell.
+
 To build the static site:
 
 ```sh

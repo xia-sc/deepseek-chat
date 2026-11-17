@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@rspack/cli'
 import { rspack, type Configuration } from '@rspack/core'
 
-const dev = process.env.NODE_ENV !== 'production'
+/**
+ * 开发模式：`rspack serve` 或显式 NODE_ENV=development；
+ * `rspack build` 一律走生产构建，避免在不同 shell 下依赖 NODE_ENV 的写法。
+ */
+const isServe = process.argv.some((arg) => arg === 'serve' || arg.endsWith('serve'))
+const dev = isServe || process.env.NODE_ENV === 'development'
 const targets = ['chrome >= 105', 'edge >= 105', 'safari >= 16', 'firefox >= 110']
 const root = path.dirname(fileURLToPath(import.meta.url))
 const { version } = JSON.parse(

@@ -107,6 +107,8 @@ export const en = {
   settingsActiveModelSearch: 'Search models or providers',
   storageUnavailable:
     'This browser blocks local storage (private window, blocked site data, or opened from file://). Provider settings live in memory only and will be lost on reload.',
+  settingsConfigFile: 'Config file (providers and active model)',
+  settingsConfigFileReveal: 'Show in folder',
   providerOfficialName: 'DeepSeek (official)',
   providerOfficialDescription:
     'Built-in provider using the API key from Data settings; supports thinking, web search and attachments.',

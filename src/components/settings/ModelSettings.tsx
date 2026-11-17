@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAnchoredPosition, useDismiss } from '../base/anchored.js'
 import { Button } from '../base/Button.js'
@@ -16,6 +16,7 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { useTranslate } from '../../i18n/index.js'
 import { fetchDraftModels } from '../../services/api/providerModels.js'
+import { getDesktopBridge } from '../../services/desktop.js'
 import {
   isStorageAvailable,
   OFFICIAL_MODELS,
@@ -51,6 +52,18 @@ export const ModelSettings = () => {
   const [editing, setEditing] = useState<Provider | null | undefined>(undefined)
   // 挂载时探测一次本地存储；不可用时明确告知，避免刷新后配置静默丢失
   const [storageAvailable] = useState(isStorageAvailable)
+  // 桌面外壳下展示配置文件位置，方便备份与手工修改
+  const [configPath, setConfigPath] = useState<string | null>(null)
+  useEffect(() => {
+    const bridge = getDesktopBridge()
+    if (!bridge) {
+      return
+    }
+    void bridge
+      .configPath()
+      .then((path) => setConfigPath(path))
+      .catch(() => setConfigPath(null))
+  }, [])
 
   return (
     <>
@@ -59,6 +72,22 @@ export const ModelSettings = () => {
           {t('storageUnavailable')}
         </div>
       )}
+      {configPath ? (
+        <div className={clsx(styles.cell, styles.row)}>
+          <div className={styles.text}>
+            <div className={styles.label}>{t('settingsConfigFile')}</div>
+            <div className={styles.description}>{configPath}</div>
+          </div>
+          <Button
+            variant="outlined"
+            size="m"
+            className={styles.cellButton}
+            onClick={() => void getDesktopBridge()?.revealConfig()}
+          >
+            {t('settingsConfigFileReveal')}
+          </Button>
+        </div>
+      ) : null}
       <div className={clsx(styles.cell, styles.row)}>
         <div className={styles.text}>
           <div className={styles.label}>{t('settingsActiveModel')}</div>

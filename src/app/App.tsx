@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
+import { hydrateProviders } from '../services/providers.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
 import {
   bindChatPersistence,
@@ -69,8 +70,8 @@ export const App = () => {
 
   useEffect(() => {
     void initChat()
-    // 首次打开先在设置里输入 API Key
-    ensureApiKey()
+    // 桌面外壳先恢复本地配置，再判断是否需要引导填写密钥
+    void hydrateProviders().then(() => ensureApiKey())
   }, [])
 
   return (

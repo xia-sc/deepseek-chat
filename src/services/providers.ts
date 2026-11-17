@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { getDesktopBridge } from './desktop.js'
 import { useSettings } from './settings.js'
 
 /** 第三方供应商支持的请求协议 */
@@ -97,25 +98,37 @@ const readProviders = (): Provider[] => {
   }
 }
 
+const DEFAULT_ACTIVE: ActiveModel = {
+  providerId: OFFICIAL_PROVIDER_ID,
+  modelId: OFFICIAL_MODELS[0].id,
+}
+
+/** 校验一个「当前模型」取值：官方要求模型在固定清单里，第三方只要求供应商存在 */
+const normalizeActive = (value: unknown, providers: Provider[]): ActiveModel | null => {
+  if (typeof value !== 'object' || value === null) {
+    return null
+  }
+  const { providerId, modelId } = value as Record<string, unknown>
+  if (typeof providerId !== 'string' || typeof modelId !== 'string' || !modelId.trim()) {
+    return null
+  }
+  const known =
+    providerId === OFFICIAL_PROVIDER_ID
+      ? OFFICIAL_MODELS.some((model) => model.id === modelId)
+      : providers.some((provider) => provider.id === providerId)
+  return known ? { providerId, modelId } : null
+}
+
 const readActive = (providers: Provider[]): ActiveModel => {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(ACTIVE_KEY) ?? 'null')
-    if (typeof parsed === 'object' && parsed !== null) {
-      const { providerId, modelId } = parsed as Record<string, unknown>
-      if (typeof providerId === 'string' && typeof modelId === 'string' && modelId.trim()) {
-        const known =
-          providerId === OFFICIAL_PROVIDER_ID
-            ? OFFICIAL_MODELS.some((model) => model.id === modelId)
-            : providers.some((provider) => provider.id === providerId)
-        if (known) {
-          return { providerId, modelId }
-        }
-      }
-    }
+    return (
+      normalizeActive(JSON.parse(localStorage.getItem(ACTIVE_KEY) ?? 'null'), providers) ??
+      DEFAULT_ACTIVE
+    )
   } catch {
     // 损坏的选择回退到官方默认模型
+    return DEFAULT_ACTIVE
   }
-  return { providerId: OFFICIAL_PROVIDER_ID, modelId: OFFICIAL_MODELS[0].id }
 }
 
 const write = (key: string, value: unknown) => {
@@ -156,9 +169,25 @@ export const useProviders = create<ProvidersState>(() => ({
   active: readActive(initialProviders),
 }))
 
+/**
+ * 桌面模式下把配置写到用户数据目录的 config.json；
+ * 浏览器里没有桥，只使用 localStorage。
+ */
+const persistToDesktop = () => {
+  const bridge = getDesktopBridge()
+  if (!bridge) {
+    return
+  }
+  const { providers, active } = useProviders.getState()
+  void bridge.writeConfig({ providers, active }).catch(() => {
+    // 写文件失败时 localStorage 仍是有效缓存，界面上的提示由存储检测负责
+  })
+}
+
 const commit = (providers: Provider[]) => {
   write(PROVIDERS_KEY, providers)
   useProviders.setState({ providers })
+  persistToDesktop()
 }
 
 export const getProvider = (id: string) =>
@@ -186,6 +215,40 @@ export const removeProvider = (id: string) => {
 export const setActiveModel = (active: ActiveModel) => {
   write(ACTIVE_KEY, active)
   useProviders.setState({ active })
+  persistToDesktop()
+}
+
+/**
+ * 启动时在桌面外壳里从 config.json 恢复配置，并回填 localStorage 缓存。
+ * 文件不存在或已损坏时保留缓存；浏览器里立即返回。
+ */
+export const hydrateProviders = async (): Promise<void> => {
+  const bridge = getDesktopBridge()
+  if (!bridge) {
+    return
+  }
+  try {
+    const raw = await bridge.readConfig()
+    if (!raw || typeof raw !== 'object') {
+      return
+    }
+    const { providers, active } = raw as { providers?: unknown; active?: unknown }
+    const list = Array.isArray(providers)
+      ? providers.flatMap((item) => {
+          const provider = normalizeProvider(item)
+          return provider ? [provider] : []
+        })
+      : []
+    if (list.length === 0) {
+      return
+    }
+    const nextActive = normalizeActive(active, list) ?? DEFAULT_ACTIVE
+    useProviders.setState({ providers: list, active: nextActive })
+    write(PROVIDERS_KEY, list)
+    write(ACTIVE_KEY, nextActive)
+  } catch {
+    // 配置文件损坏时沿用 localStorage 缓存
+  }
 }
 
 /** 当前生效的供应商，官方时返回 null */

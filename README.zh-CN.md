@@ -19,6 +19,18 @@ pnpm dev
 
 打开 http://localhost:8090 。
 
+## Windows 桌面版
+
+```sh
+pnpm dist:exe
+```
+
+产物为 `release-app/DeepSeek-Chat-<version>-portable.exe`，双击即可运行，无需安装。
+
+- 模型供应商与当前模型保存在 `%APPDATA%\DeepSeek Chat\config.json`，可直接备份或手工编辑；设置 → 模型 里能查看完整路径并打开所在文件夹。
+- 会话与附件保存在同一目录下的 Electron 用户数据中。应用用固定端口 `127.0.0.1:37821` 托管页面，因此刷新或重启后数据不会因地址变化而丢失；端口被占用时会提示，而不是换端口。
+- 开发时可以先用 `pnpm build`，再执行 `pnpm desktop` 启动桌面外壳。
+
 生成静态产物：
 
 ```sh
