@@ -65,6 +65,29 @@ const MIME = {
 
 const configFile = () => path.join(app.getPath('userData'), 'config.json')
 
+/** 旧版本（非便携）把配置放在 %APPDATA%\DeepSeek Chat\config.json */
+const legacyConfigFile = () => path.join(app.getPath('appData'), 'DeepSeek Chat', 'config.json')
+
+/** 便携版首次启动：如果本地还没有配置，把旧版本的配置复制过来，避免重新配置 */
+const migrateLegacyConfig = async () => {
+  if (!portableDataDir) {
+    return
+  }
+  const target = configFile()
+  try {
+    await fs.access(target)
+    return
+  } catch {
+    // 本地还没有配置文件，继续尝试迁移
+  }
+  try {
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.copyFile(legacyConfigFile(), target)
+  } catch {
+    // 没有旧配置或复制失败时保持空白配置
+  }
+}
+
 const readConfig = async () => {
   try {
     return JSON.parse(await fs.readFile(configFile(), 'utf8'))
@@ -170,6 +193,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null)
+    await migrateLegacyConfig()
     ipcMain.handle('config:read', () => readConfig())
     ipcMain.handle('config:write', (_event, data) => writeConfig(data))
     ipcMain.handle('config:path', () => configFile())
