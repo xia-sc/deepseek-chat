@@ -2,18 +2,49 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron')
 const http = require('node:http')
 const path = require('node:path')
 const fs = require('node:fs/promises')
+const fsSync = require('node:fs')
 
 /**
  * 桌面外壳：用固定端口的本地服务托管构建产物，
  * 页面 origin 始终是 http://127.0.0.1:<port>，IndexedDB 与缓存不会因协议或端口变化而丢失；
- * 模型供应商配置额外写入用户数据目录下的 config.json，便于备份和手工编辑。
+ * 模型供应商配置额外写入数据目录下的 config.json，便于备份和手工编辑。
  */
 
 const DEFAULT_PORT = Number(process.env.DEEPSEEK_CHAT_PORT ?? 37821)
 const DIST_DIR = path.join(__dirname, '..', 'dist')
+const RESOURCES_DIR = path.join(__dirname, '..', 'resources')
 
-// 统一应用名：开发运行与打包后的用户数据目录一致（%APPDATA%\DeepSeek Chat）
+// 统一应用名：开发运行与打包后的用户数据目录一致
 app.setName('DeepSeek Chat')
+
+/**
+ * 便携模式：portable 启动器会把 PORTABLE_EXECUTABLE_DIR 指向用户双击 exe 所在的目录。
+ * 配置与会话都放在该目录的 data/ 下，整个文件夹拷走即可迁移；
+ * 该位置不可写（只读介质、Program Files 等）时退回系统用户数据目录。
+ */
+const resolvePortableDataDir = () => {
+  const root = process.env.PORTABLE_EXECUTABLE_DIR
+  if (!root) {
+    return null
+  }
+  const dir = path.join(root, 'data')
+  try {
+    fsSync.mkdirSync(dir, { recursive: true })
+    const probe = path.join(dir, '.write-test')
+    fsSync.writeFileSync(probe, 'ok')
+    fsSync.unlinkSync(probe)
+    return dir
+  } catch {
+    return null
+  }
+}
+
+const portableDataDir = resolvePortableDataDir()
+if (portableDataDir) {
+  app.setPath('userData', portableDataDir)
+  // Chromium 的缓存、IndexedDB、Local Storage 都跟着数据目录走
+  app.setPath('sessionData', path.join(portableDataDir, 'session'))
+}
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -90,6 +121,7 @@ const createWindow = () => {
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
     title: 'DeepSeek Chat',
+    icon: path.join(RESOURCES_DIR, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
