@@ -141,6 +141,12 @@ export const en = {
   providerModelsFailed: 'Failed to fetch models: {message}',
   providerModelsHint:
     'The catalog feeds the model picker; model IDs outside it can still be added below and used.',
+  providerCatalogEmpty: 'Select models',
+  providerCatalogMore: 'and {count} more',
+  providerModelSearch: 'Search or enter a model ID',
+  providerModelNoMatch: 'No match; press Enter to add it',
+  providerModelHint:
+    'Click models to toggle them in the catalog; press Enter in the search box to add a new one.',
   providerModelPlaceholder: 'Model ID, e.g. gpt-4o-mini',
   providerModelAdd: 'Add',
   providerModelRemove: 'Remove model',

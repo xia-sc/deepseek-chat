@@ -1,8 +1,16 @@
 import clsx from 'clsx'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useAnchoredPosition, useDismiss } from '../base/anchored.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
-import { IconEditOutline16, IconRefreshOutline16, IconTrashOutline16 } from '../base/icons.js'
+import {
+  IconCheckOutline16,
+  IconChevronDownOutline14,
+  IconEditOutline16,
+  IconRefreshOutline16,
+  IconTrashOutline16,
+} from '../base/icons.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
@@ -17,6 +25,7 @@ import {
   setActiveModel,
   useProviders,
   type Provider,
+  type ProviderModel,
   type ProviderProtocol,
 } from '../../services/providers.js'
 import styles from './Settings.module.css'
@@ -181,6 +190,138 @@ const Field = ({
 )
 
 /**
+ * 模型目录下拉：触发器只显示已选摘要，展开后可在列表里勾选或取消，
+ * 也可以在搜索框里直接输入模型 ID 回车加入；模型较多时用搜索过滤。
+ */
+const ModelCatalog = ({
+  models,
+  onChange,
+}: {
+  models: ProviderModel[]
+  onChange: (models: ProviderModel[]) => void
+}) => {
+  const t = useTranslate()
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  // 浮层宽度跟随触发器，打开时测量一次；后续尺寸变化由 useAnchoredPosition 处理位置
+  const [triggerWidth, setTriggerWidth] = useState<number>()
+  const { anchorRef, floatingRef, position } = useAnchoredPosition<
+    HTMLButtonElement,
+    HTMLDivElement
+  >(open, { maxHeight: 320, minSpace: 300 })
+  // Esc 只收起下拉，不让外层表单一起关闭
+  useDismiss(open, [anchorRef, floatingRef], () => setOpen(false), { captureEscape: true })
+
+  const selected = new Set(models.map((model) => model.id))
+  const keyword = query.trim().toLowerCase()
+  const visible = keyword
+    ? models.filter((model) => model.id.toLowerCase().includes(keyword))
+    : models
+
+  const toggle = (id: string) => {
+    onChange(
+      selected.has(id)
+        ? models.filter((model) => model.id !== id)
+        : [...models, { id }]
+    )
+  }
+
+  /** 搜索框回车：已存在则切换，不存在则直接加入目录 */
+  const submit = () => {
+    const id = query.trim()
+    if (!id) {
+      return
+    }
+    if (selected.has(id)) {
+      toggle(id)
+    } else {
+      onChange([...models, { id }])
+    }
+    setQuery('')
+  }
+
+  const summary =
+    models.length === 0
+      ? t('providerCatalogEmpty')
+      : models.length <= 2
+        ? models.map((model) => model.id).join('、')
+        : `${models
+            .slice(0, 2)
+            .map((model) => model.id)
+            .join('、')} ${t('providerCatalogMore', { count: models.length - 2 })}`
+
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        className={clsx(styles.catalogTrigger, open && styles.catalogTriggerOpen)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          if (!open && anchorRef.current) {
+            setTriggerWidth(anchorRef.current.getBoundingClientRect().width)
+          }
+          setOpen((value) => !value)
+        }}
+      >
+        <span
+          className={clsx(styles.catalogSummary, models.length === 0 && styles.catalogPlaceholder)}
+        >
+          {summary}
+        </span>
+        <span className={styles.catalogArrow}>
+          <IconChevronDownOutline14 />
+        </span>
+      </button>
+      {open
+        ? createPortal(
+            <div
+              ref={floatingRef}
+              className={styles.catalogMenu}
+              style={{ ...position, ...(triggerWidth ? { width: triggerWidth } : {}) }}
+            >
+              <input
+                className={styles.catalogSearch}
+                value={query}
+                placeholder={t('providerModelSearch')}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                    event.preventDefault()
+                    submit()
+                  }
+                }}
+              />
+              <div role="listbox" aria-multiselectable="true" className={styles.catalogList}>
+                {visible.map((model) => (
+                  <div
+                    key={model.id}
+                    role="option"
+                    aria-selected={selected.has(model.id)}
+                    className={styles.catalogOption}
+                    onClick={() => toggle(model.id)}
+                  >
+                    <span className={styles.catalogOptionLabel}>{model.id}</span>
+                    {selected.has(model.id) ? <IconCheckOutline16 /> : null}
+                  </div>
+                ))}
+                {visible.length === 0 ? (
+                  <div className={styles.catalogEmpty}>{t('providerModelNoMatch')}</div>
+                ) : null}
+              </div>
+              <div className={styles.catalogHint}>{t('providerModelHint')}</div>
+            </div>,
+            document.body
+          )
+        : null}
+    </>
+  )
+}
+
+/**
  * 新增 / 编辑供应商：校验标识与地址，模型目录可手动添加，
  * 也可按当前填写的地址、协议与密钥调用 GET /models 拉取。
  */
@@ -188,7 +329,6 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
   const t = useTranslate()
   const providers = useProviders((state) => state.providers)
   const [draft, setDraft] = useState<Provider>(() => initial ?? emptyProvider())
-  const [modelInput, setModelInput] = useState('')
   const [fetching, setFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
@@ -216,19 +356,6 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
 
   const baseUrlError =
     submitted && !/^https?:\/\//.test(draft.baseUrl.trim()) ? t('providerBaseUrlInvalid') : undefined
-
-  const addModel = (id: string) => {
-    const value = id.trim()
-    if (!value) {
-      return
-    }
-    setDraft((current) =>
-      current.models.some((model) => model.id === value)
-        ? current
-        : { ...current, models: [...current.models, { id: value }] }
-    )
-    setModelInput('')
-  }
 
   const fetchModels = async () => {
     if (!draft.baseUrl.trim()) {
@@ -376,47 +503,7 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
             {fetching ? t('providerModelsFetching') : t('providerModelsFetch')}
           </button>
         </div>
-        {draft.models.length > 0 ? (
-          <div className={styles.modelList}>
-            {draft.models.map((model) => (
-              <span key={model.id} className={styles.modelChip}>
-                {model.id}
-                <button
-                  type="button"
-                  className={styles.modelRemove}
-                  aria-label={t('providerModelRemove')}
-                  onClick={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      models: current.models.filter((item) => item.id !== model.id),
-                    }))
-                  }
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
-        <div className={styles.modelAdd}>
-          <input
-            className={styles.providerInput}
-            value={modelInput}
-            placeholder={t('providerModelPlaceholder')}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setModelInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                event.preventDefault()
-                addModel(modelInput)
-              }
-            }}
-          />
-          <Button variant="outlined" size="m" onClick={() => addModel(modelInput)}>
-            {t('providerModelAdd')}
-          </Button>
-        </div>
+        <ModelCatalog models={draft.models} onChange={(models) => update('models', models)} />
         {fetchError ? (
           <div className={styles.error}>{fetchError}</div>
         ) : (
