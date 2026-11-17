@@ -17,8 +17,10 @@ export type Provider = {
   baseUrl: string
   protocol: ProviderProtocol
   apiKey: string
-  /** 模型目录；为空时模型选择器不展示任何模型，但目录外 id 仍可直接发送 */
+  /** 已选模型：进入模型选择器，请求只会用这些模型 */
   models: ProviderModel[]
+  /** 从接口获取到的候选模型；仅用于下拉展示，未勾选的不进模型选择器 */
+  catalog?: ProviderModel[]
 }
 
 /** 官方 DeepSeek 供应商的固定 id：鉴权沿用设置里的 API Key */
@@ -58,25 +60,28 @@ const normalizeProvider = (value: unknown): Provider | null => {
   if (typeof value !== 'object' || value === null) {
     return null
   }
-  const { id, name, baseUrl, protocol, apiKey, models } = value as Record<string, unknown>
+  const { id, name, baseUrl, protocol, apiKey, models, catalog } = value as Record<string, unknown>
   if (typeof id !== 'string' || !PROVIDER_ID_PATTERN.test(id) || id === OFFICIAL_PROVIDER_ID) {
     return null
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     return null
   }
+  const toModels = (list: unknown) =>
+    Array.isArray(list)
+      ? list.flatMap((item) => {
+          const model = normalizeModel(item)
+          return model ? [model] : []
+        })
+      : []
   return {
     id,
     name: typeof name === 'string' && name.trim() ? name.trim() : id,
     baseUrl: baseUrl.trim(),
     protocol: isProtocol(protocol) ? protocol : 'openai',
     apiKey: typeof apiKey === 'string' ? apiKey : '',
-    models: Array.isArray(models)
-      ? models.flatMap((item) => {
-          const model = normalizeModel(item)
-          return model ? [model] : []
-        })
-      : [],
+    models: toModels(models),
+    ...(catalog === undefined ? {} : { catalog: toModels(catalog) }),
   }
 }
 

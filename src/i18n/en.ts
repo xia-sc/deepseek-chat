@@ -137,19 +137,16 @@ export const en = {
   providerModelsFetch: 'Fetch models',
   providerModelsFetching: 'Fetching...',
   providerModelsEmpty: 'The endpoint returned no models; add model IDs manually',
-  providerModelsFetched: 'Fetched {count} models',
+  providerModelsFetched: 'Fetched {count} candidate models; check the ones to enable',
   providerModelsFailed: 'Failed to fetch models: {message}',
   providerModelsHint:
-    'The catalog feeds the model picker; model IDs outside it can still be added below and used.',
+    'Fetched models are offered as candidates; only checked ones feed the model picker.',
+  providerCatalogEmptyHint:
+    'No candidates yet. Fetch models at the top right, or type a model ID and press Enter.',
   providerCatalogEmpty: 'Select models',
   providerCatalogMore: 'and {count} more',
-  providerModelSearch: 'Search or enter a model ID',
+  providerModelSearch: 'Search models, or press Enter to add',
   providerModelNoMatch: 'No match; press Enter to add it',
-  providerModelHint:
-    'Click models to toggle them in the catalog; press Enter in the search box to add a new one.',
-  providerModelPlaceholder: 'Model ID, e.g. gpt-4o-mini',
-  providerModelAdd: 'Add',
-  providerModelRemove: 'Remove model',
   providerNotFound:
     'The provider used by this reply was deleted. Choose a model again in Settings.',
   providerNoAttachments:

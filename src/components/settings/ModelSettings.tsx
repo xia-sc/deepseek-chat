@@ -195,9 +195,11 @@ const Field = ({
  */
 const ModelCatalog = ({
   models,
+  catalog,
   onChange,
 }: {
   models: ProviderModel[]
+  catalog?: ProviderModel[]
   onChange: (models: ProviderModel[]) => void
 }) => {
   const t = useTranslate()
@@ -208,15 +210,27 @@ const ModelCatalog = ({
   const { anchorRef, floatingRef, position } = useAnchoredPosition<
     HTMLButtonElement,
     HTMLDivElement
-  >(open, { maxHeight: 320, minSpace: 300 })
+  >(open, { maxHeight: 380, minSpace: 300 })
   // Esc 只收起下拉，不让外层表单一起关闭
   useDismiss(open, [anchorRef, floatingRef], () => setOpen(false), { captureEscape: true })
 
   const selected = new Set(models.map((model) => model.id))
+  // 候选 = 接口获取到的 + 手动加入或已选但不在候选里的，避免勾选后从列表消失
+  const candidates = [...(catalog ?? [])]
+  for (const model of models) {
+    if (!candidates.some((item) => item.id === model.id)) {
+      candidates.push(model)
+    }
+  }
+  // 已选的置顶，打开列表就能看到当前勾选了哪些
+  const ordered = [
+    ...candidates.filter((model) => selected.has(model.id)),
+    ...candidates.filter((model) => !selected.has(model.id)),
+  ]
   const keyword = query.trim().toLowerCase()
   const visible = keyword
-    ? models.filter((model) => model.id.toLowerCase().includes(keyword))
-    : models
+    ? ordered.filter((model) => model.id.toLowerCase().includes(keyword))
+    : ordered
 
   const toggle = (id: string) => {
     onChange(
@@ -296,23 +310,39 @@ const ModelCatalog = ({
                 }}
               />
               <div role="listbox" aria-multiselectable="true" className={styles.catalogList}>
-                {visible.map((model) => (
-                  <div
-                    key={model.id}
-                    role="option"
-                    aria-selected={selected.has(model.id)}
-                    className={styles.catalogOption}
-                    onClick={() => toggle(model.id)}
-                  >
-                    <span className={styles.catalogOptionLabel}>{model.id}</span>
-                    {selected.has(model.id) ? <IconCheckOutline16 /> : null}
-                  </div>
-                ))}
+                {visible.map((model) => {
+                  const isSelected = selected.has(model.id)
+                  return (
+                    <div
+                      key={model.id}
+                      role="option"
+                      aria-selected={isSelected}
+                      className={clsx(
+                        styles.catalogOption,
+                        isSelected && styles.catalogOptionSelected
+                      )}
+                      onClick={() => toggle(model.id)}
+                    >
+                      <span
+                        className={clsx(
+                          styles.catalogCheckbox,
+                          isSelected && styles.catalogCheckboxChecked
+                        )}
+                      >
+                        {isSelected ? <IconCheckOutline16 /> : null}
+                      </span>
+                      <span className={styles.catalogOptionLabel}>{model.id}</span>
+                    </div>
+                  )
+                })}
                 {visible.length === 0 ? (
-                  <div className={styles.catalogEmpty}>{t('providerModelNoMatch')}</div>
+                  <div className={styles.catalogEmpty}>
+                    {candidates.length === 0
+                      ? t('providerCatalogEmptyHint')
+                      : t('providerModelNoMatch')}
+                  </div>
                 ) : null}
               </div>
-              <div className={styles.catalogHint}>{t('providerModelHint')}</div>
             </div>,
             document.body
           )
@@ -374,15 +404,19 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
         setFetchError(t('providerModelsEmpty'))
         return
       }
-      setDraft((current) => ({
-        ...current,
-        models: [
-          ...current.models,
-          ...ids
-            .filter((id) => !current.models.some((model) => model.id === id))
-            .map((id) => ({ id })),
-        ],
-      }))
+      // 获取到的只是候选，勾选后才进入模型选择器
+      setDraft((current) => {
+        const existing = current.catalog ?? []
+        return {
+          ...current,
+          catalog: [
+            ...existing,
+            ...ids
+              .filter((id) => !existing.some((model) => model.id === id))
+              .map((id) => ({ id })),
+          ],
+        }
+      })
       showToast({ key: 'providerModelsFetched', params: { count: ids.length } })
     } catch (error) {
       setFetchError(
@@ -503,7 +537,11 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
             {fetching ? t('providerModelsFetching') : t('providerModelsFetch')}
           </button>
         </div>
-        <ModelCatalog models={draft.models} onChange={(models) => update('models', models)} />
+        <ModelCatalog
+          models={draft.models}
+          catalog={draft.catalog}
+          onChange={(models) => update('models', models)}
+        />
         {fetchError ? (
           <div className={styles.error}>{fetchError}</div>
         ) : (
