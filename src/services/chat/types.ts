@@ -1,7 +1,6 @@
 import type { TranslationMessage } from '../../i18n/index.js'
 import type { ApiErrorKind } from '../api/client.js'
 import type {
-  ChatModel,
   MessageUsage,
   ServerToolBlock,
   StopDetails,
@@ -75,8 +74,10 @@ export type AssistantMessage = MessageBranch & {
   id: string
   role: 'assistant'
   createdAt: number
-  /** 未记录模型时为 null，续写使用当前默认模型。 */
-  model: ChatModel | null
+  /** 实际请求的模型 id；官方为 deepseek-flash 等，第三方为模型目录里的 id。未记录时为 null。 */
+  model: string | null
+  /** 第三方供应商 id；缺省或 official 表示官方 DeepSeek。 */
+  providerId?: string
   /** 请求时是否开启深度思考 */
   thinking?: boolean
   /** 请求时是否声明 deepseek_web_search；关闭时仍声明 deepseek_read_url */

@@ -34,6 +34,7 @@ The output is written to `dist/`. Deploy it to a static web server or open `dist
 - Upload, paste, or drag and drop attachments; use voice input and read replies aloud. A live audio spectrum appears in the first row of the input area while recording on mobile.
 - Markdown, syntax highlighting, KaTeX math, and Mermaid diagrams.
 - Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import and export.
+- Connect third-party providers under Settings → Models by entering an API base URL, protocol (OpenAI, Anthropic or Gemini), key, and model catalog, then switch the active model; third-party providers do not offer web search or attachments.
 
 ## Data and storage
 

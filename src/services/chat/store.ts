@@ -1,9 +1,16 @@
 import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
+import { streamProvider } from '../api/providerStream.js'
 import type { ChatModel, CreateMessageRequest } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
+import {
+  getProvider,
+  OFFICIAL_PROVIDER_ID,
+  resolveActiveTarget,
+  type Provider,
+} from '../providers.js'
 import { useSettings } from '../settings.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
@@ -34,6 +41,19 @@ import {
 
 /** deepseek-flash 同时支持深度思考与图片输入 */
 const MODEL: ChatModel = 'deepseek-flash'
+
+/** 回复对应的第三方供应商；官方或已删除的供应商返回 null */
+const getReplyProvider = (reply: AssistantMessage): Provider | null => {
+  const providerId = reply.providerId
+  if (!providerId || providerId === OFFICIAL_PROVIDER_ID) {
+    return null
+  }
+  return getProvider(providerId) ?? null
+}
+
+/** 回复记录的供应商已被删除 */
+const isMissingProvider = (reply: AssistantMessage) =>
+  Boolean(reply.providerId && reply.providerId !== OFFICIAL_PROVIDER_ID) && !getReplyProvider(reply)
 /** 所有生成请求统一携带的助手身份说明 */
 const SYSTEM_PROMPT = '该助手为DeepSeek，由深度求索公司创造。'
 /** 保留最近打开的详情；当前会话、生成中及尚未成功保存的会话不淘汰。 */
@@ -253,14 +273,16 @@ export const bindChatPersistence = () => {
   }
 }
 
-/** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
+/** 按当前开关与选中的模型创建回复：官方对应深度思考与联网搜索，第三方只记录模型。 */
 const createReply = (): AssistantMessage => {
   const { thinking, search } = useSettings.getState()
+  const { provider, modelId } = resolveActiveTarget()
   return {
     id: createId(),
     role: 'assistant',
     createdAt: Date.now(),
-    model: MODEL,
+    model: modelId,
+    providerId: provider?.id,
     thinking,
     search,
     prefix: true,
@@ -710,6 +732,7 @@ export const continueReply = (sessionId: string, messageId: string) => {
     ...previous,
     // 未记录请求配置的回复，续写时使用默认模型和当前开关。
     model: previous.model ?? MODEL,
+    providerId: previous.providerId,
     thinking: previous.thinking ?? thinking,
     search: previous.search ?? search,
     status: 'pending',
@@ -979,8 +1002,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       /** 附件补齐前出错属于上传失败，请求还没有发出 */
       let preparing = true
       let receivedContent = false
+      const provider = getReplyProvider(initial)
       try {
-        const prepared = await prepareFiles(sessionId, request, controller.signal)
+        if (isMissingProvider(initial)) {
+          preparing = false
+          throw new ApiError('http', { key: 'providerNotFound' })
+        }
+        // 第三方供应商没有 Files API：附件不补传，也不进入请求
+        const prepared = provider
+          ? refreshRequest(sessionId, request)
+          : await prepareFiles(sessionId, request, controller.signal)
         preparing = false
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
         const latestReminder = prepared.prefix
@@ -996,19 +1027,26 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           initial.thinking ?? false,
           latestReminder
         )
-        const events = streamMessage(
-          useSettings.getState().apiKey ?? '',
-          {
-            model: initial.model ?? MODEL,
-            system: SYSTEM_PROMPT,
-            messages,
-            thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
-            safety_check: SAFETY_CHECK,
-            tools: serverTools(initial.search ?? false),
-            ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
-          },
-          controller.signal
-        )
+        const model = initial.model ?? MODEL
+        const events = provider
+          ? streamProvider(
+              provider,
+              { model, system: SYSTEM_PROMPT, messages, thinking: initial.thinking ?? false },
+              controller.signal
+            )
+          : streamMessage(
+              useSettings.getState().apiKey ?? '',
+              {
+                model: model as ChatModel,
+                system: SYSTEM_PROMPT,
+                messages,
+                thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
+                safety_check: SAFETY_CHECK,
+                tools: serverTools(initial.search ?? false),
+                ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
+              },
+              controller.signal
+            )
         const blockIndexes = new Map<number, number>()
         for await (const event of events) {
           receivedContent ||= event.type === 'content_block_start'
@@ -1032,6 +1070,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
         }
         reply = settleReply(reply, 'done', Date.now())
+        // 第三方没有标题生成接口，用本轮提问在本地生成会话标题
+        if (provider && !controller.signal.aborted) {
+          const title = prepared.question.content.trim().replace(/\s+/g, ' ').slice(0, 30)
+          if (title) {
+            updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
+          }
+        }
         break
       } catch (error) {
         if (controller.signal.aborted) {
