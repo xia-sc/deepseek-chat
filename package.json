@@ -11,7 +11,8 @@
     "dev": "rspack serve -c rspack.config.ts",
     "build": "rspack build -c rspack.config.ts",
     "desktop": "pnpm build && electron .",
-    "dist:exe": "pnpm build && electron-builder --win",
+    "dist:exe": "pnpm check:main && pnpm build && electron-builder --win",
+    "check:main": "node scripts/check-main.cjs",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write ."

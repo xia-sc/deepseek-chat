@@ -4,6 +4,19 @@ const path = require('node:path')
 const fs = require('node:fs/promises')
 const fsSync = require('node:fs')
 
+// 启动阶段的异常没有窗口可提示，写到临时目录方便排查
+const writeCrashLog = (error) => {
+  try {
+    const target = path.join(process.env.TEMP ?? '.', 'deepseek-chat-crash.log')
+    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
+    fsSync.appendFileSync(target, `[${new Date().toISOString()}] ${detail}\n`)
+  } catch {
+    // 连日志都写不了时只能放弃
+  }
+}
+process.on('uncaughtException', writeCrashLog)
+process.on('unhandledRejection', writeCrashLog)
+
 /**
  * 桌面外壳：用固定端口的本地服务托管构建产物，
  * 页面 origin 始终是 http://127.0.0.1:<port>，IndexedDB 与缓存不会因协议或端口变化而丢失；
@@ -54,9 +67,16 @@ const resolvePortableDataDir = () => {
 
 const portableDataDir = resolvePortableDataDir()
 if (portableDataDir) {
-  app.setPath('userData', portableDataDir)
-  // Chromium 的缓存、IndexedDB、Local Storage 都跟着数据目录走
-  app.setPath('sessionData', path.join(portableDataDir, 'session'))
+  try {
+    // app.setPath 要求目标目录已经存在，否则会抛异常导致主进程启动即退出
+    const sessionDir = path.join(portableDataDir, 'session')
+    fsSync.mkdirSync(sessionDir, { recursive: true })
+    app.setPath('userData', portableDataDir)
+    // Chromium 的缓存、IndexedDB、Local Storage 都跟着数据目录走
+    app.setPath('sessionData', sessionDir)
+  } catch {
+    // 切换失败时保持默认用户数据目录，至少能正常启动
+  }
 }
 const MIME = {
   '.html': 'text/html; charset=utf-8',
