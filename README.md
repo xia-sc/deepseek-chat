@@ -1,4 +1,4 @@
-# chat-demo
+# deepseek-chat
 
 English | [简体中文](README.zh-CN.md)
 
@@ -11,8 +11,8 @@ You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or downlo
 Install Node.js 22.12+ and pnpm, then run:
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
+git clone https://github.com/xia-sc/deepseek-chat.git
+cd deepseek-chat
 pnpm install
 pnpm dev
 ```

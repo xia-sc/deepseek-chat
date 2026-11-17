@@ -1,4 +1,4 @@
-# chat-demo
+# deepseek-chat
 
 [English](README.md) | 简体中文
 
@@ -11,8 +11,8 @@
 准备 Node.js 22.12+ 和 pnpm：
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
+git clone https://github.com/xia-sc/deepseek-chat.git
+cd deepseek-chat
 pnpm install
 pnpm dev
 ```

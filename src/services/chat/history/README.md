@@ -1,6 +1,6 @@
 # 历史导入导出
 
-chat-demo 使用 `export_format_version: 3` 的历史会话 ZIP，导出文件名为 `deepseek_data-日期.zip`。字段定义见 [format.ts](./format.ts)，实际校验规则见 [schema.ts](./schema.ts)。
+deepseek-chat 使用 `export_format_version: 3` 的历史会话 ZIP，导出文件名为 `deepseek_data-日期.zip`。字段定义见 [format.ts](./format.ts)，实际校验规则见 [schema.ts](./schema.ts)。
 
 ## 归档结构
 
