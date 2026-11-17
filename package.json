@@ -11,7 +11,7 @@
     "dev": "rspack serve -c rspack.config.ts",
     "build": "rspack build -c rspack.config.ts",
     "desktop": "pnpm build && electron .",
-    "dist:exe": "pnpm build && electron-builder --win portable",
+    "dist:exe": "pnpm build && electron-builder --win",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write ."
@@ -30,7 +30,8 @@
     ],
     "win": {
       "target": [
-        "portable"
+        "portable",
+        "zip"
       ],
       "icon": "resources/icon.ico"
     },

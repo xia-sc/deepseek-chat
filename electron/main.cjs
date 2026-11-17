@@ -22,8 +22,21 @@ app.setName('DeepSeek Chat')
  * 配置与会话都放在该目录的 data/ 下，整个文件夹拷走即可迁移；
  * 该位置不可写（只读介质、Program Files 等）时退回系统用户数据目录。
  */
+/**
+ * 数据根目录：
+ * - portable 启动器会设置 PORTABLE_EXECUTABLE_DIR，指向用户双击 exe 的目录；
+ * - zip 免安装版没有启动器，直接用 exe 自身所在目录；
+ * - 开发运行（未打包）不启用便携目录，沿用系统用户数据目录。
+ */
+const resolvePortableRoot = () => {
+  if (process.env.PORTABLE_EXECUTABLE_DIR) {
+    return process.env.PORTABLE_EXECUTABLE_DIR
+  }
+  return app.isPackaged ? path.dirname(process.execPath) : null
+}
+
 const resolvePortableDataDir = () => {
-  const root = process.env.PORTABLE_EXECUTABLE_DIR
+  const root = resolvePortableRoot()
   if (!root) {
     return null
   }
