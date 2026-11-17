@@ -152,7 +152,8 @@ export const en = {
   avatarMenuSettingsDialogThemeSelectLightOption: 'Light',
   avatarMenuSettingsDialogThemeSelectDarkOption: 'Dark',
   avatarMenuSettingsDialogThemeSelectSystemOption: 'System',
-  apiKeyStart: 'Enter an API Key to get started',
+  apiKeyStart:
+    'Enter an API Key to get started, or connect a third-party provider under Models',
   apiKeyEdit: 'Edit API Key',
   apiKeyPlaceholder: 'Enter API Key',
   apiKeyVerifying: 'Verifying...',

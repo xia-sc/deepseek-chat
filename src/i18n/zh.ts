@@ -139,7 +139,7 @@ export const zh = {
   avatarMenuSettingsDialogThemeSelectLightOption: '浅色',
   avatarMenuSettingsDialogThemeSelectDarkOption: '深色',
   avatarMenuSettingsDialogThemeSelectSystemOption: '跟随系统',
-  apiKeyStart: '输入 API Key 开始使用',
+  apiKeyStart: '输入 API Key 开始使用，或在「模型」中接入第三方供应商',
   apiKeyEdit: '修改 API Key',
   apiKeyPlaceholder: '请输入 API Key',
   apiKeyVerifying: '正在验证...',
