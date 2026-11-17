@@ -443,8 +443,9 @@
 
 /* ---------- 模型供应商 ---------- */
 
-.modelSelect {
-  max-width: 320px;
+.modelPicker {
+  flex: 0 0 320px;
+  max-width: 60%;
 }
 
 .providerTag {
@@ -645,6 +646,13 @@
   padding-right: 2px;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.catalogGroupTitle {
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-caption);
 }
 
 .catalogOption {

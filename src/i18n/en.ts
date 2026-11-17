@@ -104,6 +104,7 @@ export const en = {
   settingsActiveModelDescription:
     'New chats and regenerated replies use this model. Third-party providers do not offer web search or the file API.',
   settingsActiveModelEmpty: 'No model selected',
+  settingsActiveModelSearch: 'Search models or providers',
   providerOfficialName: 'DeepSeek (official)',
   providerOfficialDescription:
     'Built-in provider using the API key from Data settings; supports thinking, web search and attachments.',

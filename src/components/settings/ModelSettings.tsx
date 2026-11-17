@@ -39,21 +39,6 @@ const PROTOCOL_LABELS: Record<ProviderProtocol, string> = {
 
 const PROTOCOLS: ProviderProtocol[] = ['openai', 'anthropic', 'gemini']
 
-/** 当前模型用 providerId + modelId 编码成下拉值，避免模型 id 里出现分隔符时冲突 */
-const encode = (providerId: string, modelId: string) => JSON.stringify([providerId, modelId])
-
-const decode = (value: string): { providerId: string; modelId: string } | null => {
-  try {
-    const parsed: unknown = JSON.parse(value)
-    if (Array.isArray(parsed) && typeof parsed[0] === 'string' && typeof parsed[1] === 'string') {
-      return { providerId: parsed[0], modelId: parsed[1] }
-    }
-  } catch {
-    // 非法值按未选择处理
-  }
-  return null
-}
-
 /**
  * 设置 → 模型：选择当前使用的模型，并管理第三方供应商
  * （地址、协议、密钥与模型目录）。官方 DeepSeek 为内置项，不可删除。
@@ -61,22 +46,8 @@ const decode = (value: string): { providerId: string; modelId: string } | null =
 export const ModelSettings = () => {
   const t = useTranslate()
   const providers = useProviders((state) => state.providers)
-  const active = useProviders((state) => state.active)
   // undefined：未打开表单；null：新建；Provider：编辑
   const [editing, setEditing] = useState<Provider | null | undefined>(undefined)
-
-  const modelOptions = [
-    ...OFFICIAL_MODELS.map((model) => ({
-      value: encode(OFFICIAL_PROVIDER_ID, model.id),
-      label: `${t('providerOfficialName')} · ${model.name ?? model.id}`,
-    })),
-    ...providers.flatMap((provider) =>
-      provider.models.map((model) => ({
-        value: encode(provider.id, model.id),
-        label: `${provider.name} · ${model.name ?? model.id}`,
-      }))
-    ),
-  ]
 
   return (
     <>
@@ -85,19 +56,7 @@ export const ModelSettings = () => {
           <div className={styles.label}>{t('settingsActiveModel')}</div>
           <div className={styles.description}>{t('settingsActiveModelDescription')}</div>
         </div>
-        <Select
-          ariaLabel={t('settingsActiveModel')}
-          className={styles.modelSelect}
-          value={encode(active.providerId, active.modelId)}
-          options={modelOptions}
-          placeholder={t('settingsActiveModelEmpty')}
-          onChange={(value) => {
-            const next = decode(value)
-            if (next) {
-              setActiveModel(next)
-            }
-          }}
-        />
+        <ModelPicker />
       </div>
 
       <div className={clsx(styles.cell, styles.row)}>
@@ -148,6 +107,125 @@ export const ModelSettings = () => {
       {editing !== undefined ? (
         <ProviderForm initial={editing} onClose={() => setEditing(undefined)} />
       ) : null}
+    </>
+  )
+}
+
+/** 当前模型：按供应商分组的单选下拉，带搜索，点选即生效 */
+const ModelPicker = () => {
+  const t = useTranslate()
+  const providers = useProviders((state) => state.providers)
+  const active = useProviders((state) => state.active)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [triggerWidth, setTriggerWidth] = useState<number>()
+  const { anchorRef, floatingRef, position } = useAnchoredPosition<
+    HTMLButtonElement,
+    HTMLDivElement
+  >(open, { maxHeight: 380, minSpace: 300 })
+  useDismiss(open, [anchorRef, floatingRef], () => setOpen(false), { captureEscape: true })
+
+  // 官方在前，第三方按配置顺序；没有模型的供应商不出现
+  const groups = [
+    { id: OFFICIAL_PROVIDER_ID, name: t('providerOfficialName'), models: OFFICIAL_MODELS },
+    ...providers.map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      models: provider.models,
+    })),
+  ].filter((group) => group.models.length > 0)
+
+  const current = groups
+    .flatMap((group) => group.models.map((model) => ({ model, group })))
+    .find(({ model, group }) => group.id === active.providerId && model.id === active.modelId)
+
+  const keyword = query.trim().toLowerCase()
+  const filtered = groups
+    .map((group) => ({
+      ...group,
+      models: keyword
+        ? group.models.filter(
+            (model) =>
+              model.id.toLowerCase().includes(keyword) ||
+              (model.name ?? '').toLowerCase().includes(keyword) ||
+              group.name.toLowerCase().includes(keyword)
+          )
+        : group.models,
+    }))
+    .filter((group) => group.models.length > 0)
+
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        className={clsx(styles.catalogTrigger, styles.modelPicker, open && styles.catalogTriggerOpen)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          if (!open && anchorRef.current) {
+            setTriggerWidth(anchorRef.current.getBoundingClientRect().width)
+          }
+          setOpen((value) => !value)
+        }}
+      >
+        <span className={clsx(styles.catalogSummary, !current && styles.catalogPlaceholder)}>
+          {current ? `${current.group.name} · ${current.model.name ?? current.model.id}` : t('settingsActiveModelEmpty')}
+        </span>
+        <span className={styles.catalogArrow}>
+          <IconChevronDownOutline14 />
+        </span>
+      </button>
+      {open
+        ? createPortal(
+            <div
+              ref={floatingRef}
+              className={styles.catalogMenu}
+              style={{ ...position, ...(triggerWidth ? { width: triggerWidth } : {}) }}
+            >
+              <input
+                className={styles.catalogSearch}
+                value={query}
+                placeholder={t('settingsActiveModelSearch')}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <div role="listbox" className={styles.catalogList}>
+                {filtered.map((group) => (
+                  <div key={group.id}>
+                    <div className={styles.catalogGroupTitle}>{group.name}</div>
+                    {group.models.map((model) => {
+                      const isActive = group.id === active.providerId && model.id === active.modelId
+                      return (
+                        <div
+                          key={model.id}
+                          role="option"
+                          aria-selected={isActive}
+                          className={clsx(
+                            styles.catalogOption,
+                            isActive && styles.catalogOptionSelected
+                          )}
+                          onClick={() => {
+                            setActiveModel({ providerId: group.id, modelId: model.id })
+                            setQuery('')
+                            setOpen(false)
+                          }}
+                        >
+                          <span className={styles.catalogOptionLabel}>{model.name ?? model.id}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+                {filtered.length === 0 ? (
+                  <div className={styles.catalogEmpty}>{t('providerModelNoMatch')}</div>
+                ) : null}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </>
   )
 }
