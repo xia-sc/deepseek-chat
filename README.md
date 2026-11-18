@@ -6,6 +6,12 @@ A static chat demo powered by the DeepSeek API. No application backend is requir
 
 You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
 
+## Fork and license
+
+This project is a fork of [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). Both this project and the upstream project are released under the [MIT License](LICENSE).
+
+Copyright (c) 2026 DeepSeek (upstream project).
+
 ## Getting started
 
 Install Node.js 22.12+ and pnpm, then run:

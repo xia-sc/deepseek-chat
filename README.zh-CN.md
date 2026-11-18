@@ -6,6 +6,12 @@
 
 点击 [在线体验](https://deepseek-ai.github.io/chat-demo/) 即可使用，也可以前往 [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。首次使用时，请在设置中填写 API Key。
 
+## 来源与许可
+
+本项目 fork 自 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)，本项目与原项目均采用 [MIT License](LICENSE) 开源协议。
+
+Copyright (c) 2026 DeepSeek（原项目）。
+
 ## 运行
 
 准备 Node.js 22.12+ 和 pnpm：
