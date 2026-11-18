@@ -66,7 +66,7 @@ export const formatSearchContext = (query: string, results: WebSearchResult[]): 
       return `${index + 1}. ${title}\n   ${result.url}${snippet}`
     })
     .join('\n\n')
-  return `以下是针对「${query}」的联网搜索结果，请结合这些信息回答；引用时注明来源标题或链接：\n\n${lines}`
+  return `以下是针对「${query}」的联网搜索结果，已作为背景信息提供给你。请直接、自然地回答问题，不要写“搜索结果说”“根据搜索”“有文章说”之类的过程描述；引用具体事实时用自然语言陈述，并附上来源链接。\n\n${lines}`
 }
 
 /** 纯寒暄、确认、道谢等不需要外部信息的输入 */

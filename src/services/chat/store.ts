@@ -3,8 +3,19 @@ import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import { streamProvider } from '../api/providerStream.js'
 import { searchWithDeepseek } from '../api/deepseekSearch.js'
-import { formatSearchContext, searchWeb, shouldSearch } from '../api/webSearch.js'
-import type { ChatModel, CreateMessageRequest, InlineFileBlockParam } from '../api/types.js'
+import {
+  formatSearchContext,
+  searchWeb,
+  shouldSearch,
+  type WebSearchResult,
+} from '../api/webSearch.js'
+import type {
+  ChatModel,
+  CreateMessageRequest,
+  InlineFileBlockParam,
+  ServerToolUseBlock,
+  WebSearchToolResultBlock,
+} from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import {
@@ -37,6 +48,7 @@ import {
   type AssistantMessage,
   type FileAttachment,
   type Message,
+  type ReplyBlock,
   type Session,
   type SessionSummary,
   type UserMessage,
@@ -786,32 +798,71 @@ const toDataUrl = (blob: Blob): Promise<string> =>
     reader.readAsDataURL(blob)
   })
 
+/** 一次应用侧搜索的结果：注入用的上下文、检索词与原始结果 */
+type SearchOutcome = { context: string; query: string; results: WebSearchResult[] }
+
 /**
  * 应用侧联网搜索：打开搜索、模型自身不支持内置 web_search、且供应商配置了搜索能力时，
- * 先把检索结果拼成上下文注入 system。搜索失败只降级为无上下文，不阻塞对话。
+ * 先检索并把结果拼成上下文注入 system。搜索失败只降级为无上下文，不阻塞对话。
  * 优先用供应商自己的搜索接口；没有时回退到 DeepSeek 官方搜索（供应商 Key 或全局 Key）。
  */
-const buildSearchContext = async (
+const buildSearchOutcome = async (
   provider: Provider,
   enabled: boolean,
   question: string,
   signal: AbortSignal
-): Promise<string> => {
+): Promise<SearchOutcome | null> => {
   if (!enabled || !question.trim() || !shouldSearch(question)) {
-    return ''
+    return null
   }
   const deepseekKey = provider.deepseekSearchKey ?? useSettings.getState().apiKey ?? ''
   if (!provider.searchEndpoint && !deepseekKey) {
-    return ''
+    return null
   }
   try {
     const results = provider.searchEndpoint
       ? await searchWeb(provider.searchEndpoint, provider.apiKey, question, signal)
       : await searchWithDeepseek(deepseekKey, question, signal)
-    return formatSearchContext(question, results)
+    if (results.length === 0) {
+      return null
+    }
+    return { context: formatSearchContext(question, results), query: question, results }
   } catch {
-    return ''
+    return null
   }
+}
+
+/**
+ * 把应用侧搜索结果包装成官方的搜索工具块：UI 会像内置搜索一样把它们折叠成
+ * 「搜索到 N 个网页」，搜索过程不再混在正文里。
+ */
+const toLocalSearchBlocks = (query: string, results: WebSearchResult[]): ReplyBlock[] => {
+  const id = `local-search-${Date.now().toString(36)}`
+  const toolUse: ServerToolUseBlock = {
+    type: 'server_tool_use',
+    id,
+    name: 'deepseek_web_search',
+    input: { action: 'search', query, queries: [query] },
+    caller: { type: 'direct' },
+    // deep_search 在界面上显示为「搜索到 N 个网页」，更贴合应用侧只检索不读正文的行为
+    kind: 'deep_search',
+  }
+  const resultBlock: WebSearchToolResultBlock = {
+    type: 'web_search_tool_result',
+    tool_use_id: id,
+    content: results.map((result) => ({
+      type: 'web_search_result' as const,
+      title: result.title,
+      url: result.url,
+      snippet: result.snippet,
+      site_icon: null,
+      site_name: null,
+      encrypted_content: '',
+      page_age: null,
+    })),
+    kind: 'deep_search',
+  }
+  return [toolUse, resultBlock]
 }
 
 /**
@@ -1110,21 +1161,27 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         const resolveInline = provider
           ? await createInlineFileResolver(provider, prepared, model)
           : undefined
-        // 内置 web_search 不可用时改走供应商的搜索接口，结果注入 system
-        const searchContext = provider
-          ? await buildSearchContext(
+        // 内置 web_search 不可用时改走供应商的搜索接口，结果注入 system 并展示为搜索工具块
+        const searchOutcome = provider
+          ? await buildSearchOutcome(
               provider,
               (initial.search ?? false) && !providerSearch,
               prepared.question.content,
               controller.signal
             )
-          : ''
+          : null
         preparing = false
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
         const latestReminder = prepared.prefix
           ? prepared.prefix.latestReminder
           : createLatestReminder(useSettings.getState())
-        reply = { ...reply, latestReminder }
+        reply = {
+          ...reply,
+          latestReminder,
+          blocks: searchOutcome
+            ? [...reply.blocks, ...toLocalSearchBlocks(searchOutcome.query, searchOutcome.results)]
+            : reply.blocks,
+        }
         updateReply(sessionId, reply)
         persist(sessionId)
         const messages = toRequestMessages(
@@ -1140,7 +1197,9 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
               provider,
               {
                 model,
-                system: searchContext ? `${SYSTEM_PROMPT}\n\n${searchContext}` : SYSTEM_PROMPT,
+                system: searchOutcome
+                  ? `${SYSTEM_PROMPT}\n\n${searchOutcome.context}`
+                  : SYSTEM_PROMPT,
                 messages,
                 thinking: initial.thinking ?? false,
                 search: providerSearch,
