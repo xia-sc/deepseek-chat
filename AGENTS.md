@@ -20,6 +20,15 @@
 
 **不要用 `pnpm dist:exe` 做日常开发**：它要 2–3 分钟，日常改界面用 `pnpm dev`。
 
+## 坑 0：手动打包前必须先 `pnpm build`（否则打进旧前端）
+
+`electron-builder` 只打包现有的 `dist/`，而 `pnpm dev` 只在内存里跑 rspack dev server，**不会更新 `dist/`**。
+如果跳过构建直接执行 `electron-builder`，exe 里的前端就是上一次构建的旧代码，表现为“明明改了、测试也通过了，打包出来的界面却没变”。
+
+- 首选 `pnpm dist:exe`：脚本本身包含 `pnpm build`；
+- 手动打包时先 `pnpm build`，再执行 `electron-builder --win --config.npmRebuild=false`；
+- 打包后可以自检 asar 是否为新构建：在 `resources/app.asar` 二进制里搜索新增的界面文案（例如新增的 i18n 字符串）应命中。
+
 ## 坑 1：工作区目录带 Low 完整性标签，Electron 在工作区内启动即崩溃（最重要）
 
 - 现象：双击 `win-unpacked/DeepSeek Chat.exe` 或运行 `electron .` 后**静默退出**，退出码 `0x80000003`（STATUS_BREAKPOINT），无任何日志、无窗口。
