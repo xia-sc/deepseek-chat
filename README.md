@@ -2,15 +2,26 @@
 
 English | [简体中文](README.zh-CN.md)
 
-A static chat demo powered by the DeepSeek API. No application backend is required: the browser connects directly to the configured API service.
+A desktop chat client for the DeepSeek API and third-party compatible providers, built with Electron, React and rspack. It forked from [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) and adds a desktop shell, provider switching, multimodal input and web search.
 
-You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
+The Windows build keeps settings, provider keys and conversations in `%APPDATA%\DeepSeek Chat`, so upgrading or moving the executable never loses your configuration. A browser dev mode is available for UI work.
 
 ## Fork and license
 
 This project is a fork of [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). Both this project and the upstream project are released under the [MIT License](LICENSE).
 
 Copyright (c) 2026 DeepSeek (upstream project).
+
+## Features
+
+- Multiple conversations with automatic titles, renaming and deletion; edit prompts, regenerate replies and switch message branches.
+- Streaming replies with deep thinking, smart search, link reading and source citations; stop generation or continue eligible replies.
+- Attachments by upload, paste or drag and drop; voice input and read-aloud playback.
+- Markdown, syntax highlighting, KaTeX math and Mermaid diagrams.
+- Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import/export.
+- Third-party providers under Settings → Models, speaking OpenAI Chat Completions, Anthropic Messages, Google Gemini or OpenAI Responses. The model catalog is read from `GET /models`; multimodal, context-length and max-output capabilities are filled in automatically when the provider reports them, and can be edited per model.
+- A model switcher in the input area, plus built-in presets for Command Code.
+- App-side web search for third-party models: either the provider's own search endpoint (for example Command Code's `/alpha/web-search`), or the DeepSeek official `/v1/tools/search` with your DeepSeek key. Results appear as a folded "found N pages" tool step instead of being echoed in the answer, and greetings are not searched.
 
 ## Getting started
 
@@ -23,7 +34,7 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:8090.
+Open http://localhost:8090 to use the browser mode (API key and settings in localStorage, conversations in IndexedDB), or run the desktop shell as described below.
 
 For desktop-shell development with hot reload, run the dev server in one terminal and the Electron shell in another:
 
@@ -47,44 +58,37 @@ This produces `E:/build/deepseek-chat/DeepSeek-Chat-<version>-portable.exe`; dou
 - Conversations and attachments live under `session/` in the same directory. The app serves the page on a fixed `127.0.0.1:37821`, so data survives restarts and reloads; if that port is taken the app reports it instead of switching ports.
 - For development, run `pnpm build` once and then `pnpm desktop` to launch the desktop shell (it uses the same system user data directory).
 
-To build the static site:
+## Building the front end
 
 ```sh
 pnpm build
 ```
 
-The output is written to `dist/`. Deploy it to a static web server or open `dist/index.html` directly. Opening the file directly requires browser support for storage on `file://` pages and an API service that permits their cross-origin requests.
-
-## Features
-
-- Multiple conversations with automatic titles, renaming, and deletion; edit prompts, regenerate replies, and switch between message branches.
-- Streaming replies, deep thinking, smart search, link reading, and source citations; stop generation or continue eligible replies.
-- Upload, paste, or drag and drop attachments; use voice input and read replies aloud. A live audio spectrum appears in the first row of the input area while recording on mobile.
-- Markdown, syntax highlighting, KaTeX math, and Mermaid diagrams.
-- Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import and export.
-- Connect third-party providers under Settings → Models by entering an API base URL, protocol (OpenAI, Anthropic or Gemini), key, and model catalog, then switch the active model; third-party providers do not offer web search or attachments.
+The output is written to `dist/`. The desktop build packages this directory; you can also serve it from a static web server for a browser-only preview. Opening `dist/index.html` directly requires browser support for storage on `file://` pages and an API service that permits their cross-origin requests.
 
 ## Data and storage
 
-Your API key and settings are stored in the browser's localStorage. Conversations and original attachments are stored in IndexedDB. Local data is isolated by browser profile and site origin. Sending messages, uploading attachments, and using speech features sends the relevant content to the configured API service.
-
-History import and export in Settings use ZIP archives. After confirmation and successful validation, importing replaces all local conversations and attachments. Exports include conversations and locally available original images, but exclude API keys, settings, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
-
-Settings → Data → Delete all chats clears all local conversations, original attachments, and unsent drafts after confirmation. It stops ongoing replies and returns to a new chat. Your API key and settings are preserved; files already uploaded to the API service are not deleted.
+- Desktop: settings, provider keys and conversations live in `%APPDATA%\DeepSeek Chat` (`config.json` and `session/`), so they survive upgrades and moving the executable.
+- Browser mode: the API key and settings live in the browser's localStorage, conversations and original attachments in IndexedDB.
+- Sending messages, uploading attachments and using speech features send the relevant content to the configured API service.
+- History import and export in Settings use ZIP archives. After confirmation and successful validation, importing replaces all local conversations and attachments. Exports include conversations and locally available original images, but exclude API keys, settings, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
+- Settings → Data → Delete all chats clears all local conversations, original attachments and unsent drafts after confirmation. It stops ongoing replies and returns to a new chat. Your API key and settings are preserved; files already uploaded to the API service are not deleted.
 
 ## Development
 
-| Command       | Description                  |
-| ------------- | ---------------------------- |
-| `pnpm dev`    | Start the development server |
-| `pnpm build`  | Build into `dist/`           |
-| `pnpm type`   | Run TypeScript type checks   |
-| `pnpm lint`   | Lint with oxlint             |
-| `pnpm format` | Format with oxfmt            |
+| Command        | Description                   |
+| -------------- | ----------------------------- |
+| `pnpm dev`     | Start the development server  |
+| `pnpm build`   | Build into `dist/`            |
+| `pnpm desktop` | Build and launch Electron     |
+| `pnpm dist:exe`| Build the Windows release     |
+| `pnpm type`    | Run TypeScript type checks    |
+| `pnpm lint`    | Lint with oxlint              |
+| `pnpm format`  | Format with oxfmt             |
 
 [rspack.config.ts](rspack.config.ts) uses `https://api.deepseek.com` by default. Use `createConfig({ apiOrigin, devServer })` to customize the API origin and development server proxy.
 
-Chat uses `deepseek-flash` by default through Anthropic-compatible Messages / Files APIs. Speech features use ASR / TTS endpoints. Requests include extensions for search, link reading, titles, and `latest_reminder`, so the configured service must support the corresponding capabilities. Supported attachment formats are determined by server-side validation.
+The official path uses `deepseek-flash` by default through Anthropic-compatible Messages / Files APIs. Speech features use ASR / TTS endpoints. Requests include extensions for search, link reading, titles, and `latest_reminder`, so the configured service must support the corresponding capabilities. Supported attachment formats are determined by server-side validation.
 
 ```text
 src/
@@ -92,11 +96,12 @@ src/
   components/          Chat, settings, Markdown, and other UI components
   i18n/                English and Chinese translations
   services/
-    api/               API requests, SSE, and protocol types
+    api/               API requests, SSE, protocol adapters, and provider model catalog
     chat/              Conversations, message branches, storage, and history import/export
     markdown/          Markdown parsing, syntax highlighting, and diagrams
     speech/            Audio recording and read-aloud playback
   utils/               Shared utilities
+electron/              Electron main process and preload bridge
 ```
 
 ## License
