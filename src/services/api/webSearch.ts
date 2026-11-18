@@ -68,3 +68,31 @@ export const formatSearchContext = (query: string, results: WebSearchResult[]): 
     .join('\n\n')
   return `以下是针对「${query}」的联网搜索结果，请结合这些信息回答；引用时注明来源标题或链接：\n\n${lines}`
 }
+
+/** 纯寒暄、确认、道谢等不需要外部信息的输入 */
+const SMALL_TALK =
+  /^(你好|您好|hi|hello|hey|嗨|在吗|在不在|谢谢|谢了|多谢|好的|好|ok|okay|嗯|嗯嗯|收到|明白|知道了|再见|拜拜|晚安|早上好|下午好|晚上好|辛苦了|厉害|牛)[!！。.？?~～\s]*$/i
+
+/**
+ * 是否值得为这个提问发起联网搜索。
+ * 客户端搜索是「先搜后问」，不像模型内置工具那样能由模型自己判断，
+ * 所以先在这里过滤掉明显不需要外部信息、且搜索会显得突兀的输入。
+ */
+export const shouldSearch = (question: string): boolean => {
+  const text = question.trim()
+  if (!text) {
+    return false
+  }
+  // 纯符号或表情
+  if (!/[\p{L}\p{N}]/u.test(text)) {
+    return false
+  }
+  // 极短且没有实义的输入
+  if (text.length < 2) {
+    return false
+  }
+  if (SMALL_TALK.test(text)) {
+    return false
+  }
+  return true
+}

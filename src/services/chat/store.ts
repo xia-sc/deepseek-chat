@@ -3,7 +3,7 @@ import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import { streamProvider } from '../api/providerStream.js'
 import { searchWithDeepseek } from '../api/deepseekSearch.js'
-import { formatSearchContext, searchWeb } from '../api/webSearch.js'
+import { formatSearchContext, searchWeb, shouldSearch } from '../api/webSearch.js'
 import type { ChatModel, CreateMessageRequest, InlineFileBlockParam } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
@@ -797,7 +797,7 @@ const buildSearchContext = async (
   question: string,
   signal: AbortSignal
 ): Promise<string> => {
-  if (!enabled || !question.trim()) {
+  if (!enabled || !question.trim() || !shouldSearch(question)) {
     return ''
   }
   const deepseekKey = provider.deepseekSearchKey ?? useSettings.getState().apiKey ?? ''
