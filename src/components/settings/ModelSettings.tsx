@@ -32,14 +32,15 @@ import {
 } from '../../services/providers.js'
 import styles from './Settings.module.css'
 
-/** 协议在界面上的名称；Gemini 走 generateContent，OpenAI/Anthropic 为各自的 Messages 风格 */
+/** 协议在界面上的名称；Gemini 走 generateContent，Responses 为 OpenAI 的新式接口 */
 const PROTOCOL_LABELS: Record<ProviderProtocol, string> = {
   openai: 'OpenAI Chat Completions',
   anthropic: 'Anthropic Messages',
   gemini: 'Google Gemini',
+  responses: 'OpenAI Responses',
 }
 
-const PROTOCOLS: ProviderProtocol[] = ['openai', 'anthropic', 'gemini']
+const PROTOCOLS: ProviderProtocol[] = ['openai', 'anthropic', 'gemini', 'responses']
 
 /**
  * 设置 → 模型：选择当前使用的模型，并管理第三方供应商
@@ -281,6 +282,138 @@ const emptyProvider = (): Provider => ({
   models: [],
 })
 
+/**
+ * 内置供应商预设：一键填入标识、名称、地址与协议，密钥仍由用户填写。
+ * Command Code 的 Claude 模型只在 /messages 端点提供，其余模型走 /chat/completions。
+ */
+type ProviderPreset = Pick<
+  Provider,
+  'id' | 'name' | 'baseUrl' | 'protocol' | 'searchEndpoint'
+>
+
+/** Command Code 的应用侧搜索接口：打开智能搜索时先检索，再把结果注入上下文 */
+const COMMANDCODE_SEARCH_ENDPOINT = 'https://api.commandcode.ai/alpha/web-search'
+
+const PROVIDER_PRESETS: { key: string; label: string; provider: ProviderPreset }[] = [
+  {
+    key: 'commandcode',
+    label: 'Command Code',
+    provider: {
+      id: 'commandcode',
+      name: 'Command Code',
+      baseUrl: 'https://api.commandcode.ai/provider/v1',
+      protocol: 'openai',
+      searchEndpoint: COMMANDCODE_SEARCH_ENDPOINT,
+    },
+  },
+  {
+    key: 'commandcode-claude',
+    label: 'Command Code (Claude)',
+    provider: {
+      id: 'commandcode-claude',
+      name: 'Command Code (Claude)',
+      baseUrl: 'https://api.commandcode.ai/provider/v1',
+      protocol: 'anthropic',
+      searchEndpoint: COMMANDCODE_SEARCH_ENDPOINT,
+    },
+  },
+  {
+    key: 'commandcode-responses',
+    label: 'Command Code (Responses)',
+    provider: {
+      id: 'commandcode-responses',
+      name: 'Command Code (Responses)',
+      baseUrl: 'https://api.commandcode.ai/provider/v1',
+      protocol: 'responses',
+      searchEndpoint: COMMANDCODE_SEARCH_ENDPOINT,
+    },
+  },
+]
+
+/** 把接口探测到的能力补进模型，已有的手填值优先 */
+const fillCapabilities = (model: ProviderModel, fetched: ProviderModel): ProviderModel => ({
+  ...model,
+  ...(model.vision === undefined && fetched.vision !== undefined ? { vision: fetched.vision } : {}),
+  ...(model.files === undefined && fetched.files !== undefined ? { files: fetched.files } : {}),
+  ...(model.search === undefined && fetched.search !== undefined ? { search: fetched.search } : {}),
+  ...(model.contextLength === undefined && fetched.contextLength !== undefined
+    ? { contextLength: fetched.contextLength }
+    : {}),
+  ...(model.maxOutput === undefined && fetched.maxOutput !== undefined
+    ? { maxOutput: fetched.maxOutput }
+    : {}),
+})
+
+/** 单个模型的能力编辑：图片/文件开关与上下文、最大输出，留空表示未知 */
+const ModelCapabilityRow = ({
+  model,
+  onChange,
+  showSearch,
+}: {
+  model: ProviderModel
+  onChange: (model: ProviderModel) => void
+  /** 供应商配置了应用侧搜索接口时，内置搜索能力没有意义，隐藏该勾选 */
+  showSearch: boolean
+}) => {
+  const t = useTranslate()
+  const setNumber = (key: 'contextLength' | 'maxOutput', value: string) => {
+    const parsed = Number(value)
+    onChange({
+      ...model,
+      [key]: value.trim() && Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : undefined,
+    })
+  }
+  return (
+    <div className={styles.modelCapabilityRow}>
+      <span className={styles.modelCapabilityName}>{model.id}</span>
+      <label className={styles.modelCapabilityToggle}>
+        <input
+          type="checkbox"
+          checked={model.vision === true}
+          onChange={(event) => onChange({ ...model, vision: event.target.checked })}
+        />
+        {t('providerModelVision')}
+      </label>
+      <label className={styles.modelCapabilityToggle}>
+        <input
+          type="checkbox"
+          checked={model.files === true}
+          onChange={(event) => onChange({ ...model, files: event.target.checked })}
+        />
+        {t('providerModelFiles')}
+      </label>
+      {showSearch ? (
+        <label className={styles.modelCapabilityToggle}>
+          <input
+            type="checkbox"
+            checked={model.search === true}
+            onChange={(event) => onChange({ ...model, search: event.target.checked })}
+          />
+          {t('providerModelWebSearch')}
+        </label>
+      ) : null}
+      <input
+        className={styles.modelCapabilityNumber}
+        type="number"
+        min={1}
+        value={model.contextLength ?? ''}
+        placeholder={t('providerModelContextLength')}
+        aria-label={t('providerModelContextLength')}
+        onChange={(event) => setNumber('contextLength', event.target.value)}
+      />
+      <input
+        className={styles.modelCapabilityNumber}
+        type="number"
+        min={1}
+        value={model.maxOutput ?? ''}
+        placeholder={t('providerModelMaxOutput')}
+        aria-label={t('providerModelMaxOutput')}
+        onChange={(event) => setNumber('maxOutput', event.target.value)}
+      />
+    </div>
+  )
+}
+
 /** 字段容器：标签在上，提示或错误在下 */
 const Field = ({
   label,
@@ -347,11 +480,17 @@ const ModelCatalog = ({
     ? ordered.filter((model) => model.id.toLowerCase().includes(keyword))
     : ordered
 
+  // 从候选里带上接口探测到的能力，勾选即自动配置
+  const withCapabilities = (id: string) => {
+    const candidate = candidates.find((model) => model.id === id)
+    return candidate ? { ...candidate } : { id }
+  }
+
   const toggle = (id: string) => {
     onChange(
       selected.has(id)
         ? models.filter((model) => model.id !== id)
-        : [...models, { id }]
+        : [...models, withCapabilities(id)]
     )
   }
 
@@ -364,7 +503,7 @@ const ModelCatalog = ({
     if (selected.has(id)) {
       toggle(id)
     } else {
-      onChange([...models, { id }])
+      onChange([...models, withCapabilities(id)])
     }
     setQuery('')
   }
@@ -482,6 +621,12 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
   const update = <K extends keyof Provider>(key: K, value: Provider[K]) =>
     setDraft((current) => ({ ...current, [key]: value }))
 
+  /** 应用预设：填好连接信息，保留用户已经输入的密钥 */
+  const applyPreset = (preset: ProviderPreset) => {
+    setDraft((current) => ({ ...current, ...preset, apiKey: current.apiKey }))
+    setFetchError(null)
+  }
+
   const idError = (() => {
     const id = draft.id.trim()
     if (!id) {
@@ -510,29 +655,36 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
     setFetching(true)
     setFetchError(null)
     try {
-      const ids = await fetchDraftModels({
+      const models = await fetchDraftModels({
         baseUrl: draft.baseUrl.trim(),
         protocol: draft.protocol,
         apiKey: draft.apiKey.trim(),
       })
-      if (ids.length === 0) {
+      if (models.length === 0) {
         setFetchError(t('providerModelsEmpty'))
         return
       }
-      // 获取到的只是候选，勾选后才进入模型选择器
+      // 获取到的只是候选，勾选后才进入模型选择器；返回的能力同时补进已选模型
       setDraft((current) => {
         const existing = current.catalog ?? []
         return {
           ...current,
           catalog: [
-            ...existing,
-            ...ids
-              .filter((id) => !existing.some((model) => model.id === id))
-              .map((id) => ({ id })),
+            ...existing.map((item) => {
+              const fetched = models.find((model) => model.id === item.id)
+              return fetched ? fillCapabilities(item, fetched) : item
+            }),
+            ...models
+              .filter((model) => !existing.some((item) => item.id === model.id))
+              .map((model) => ({ ...model })),
           ],
+          models: current.models.map((model) => {
+            const fetched = models.find((item) => item.id === model.id)
+            return fetched ? fillCapabilities(model, fetched) : model
+          }),
         }
       })
-      showToast({ key: 'providerModelsFetched', params: { count: ids.length } })
+      showToast({ key: 'providerModelsFetched', params: { count: models.length } })
     } catch (error) {
       setFetchError(
         t('providerModelsFailed', {
@@ -587,6 +739,22 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
     >
       <p className={styles.description}>{t('providerFormDescription')}</p>
 
+      <div className={styles.providerPresets}>
+        <div className={styles.fieldLabel}>{t('providerPresets')}</div>
+        <div className={styles.providerPresetList}>
+          {PROVIDER_PRESETS.map((preset) => (
+            <button
+              key={preset.key}
+              type="button"
+              className={styles.providerPreset}
+              onClick={() => applyPreset(preset.provider)}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <Field label={t('providerId')} hint={t('providerIdHint')} error={idError}>
         <input
           className={styles.providerInput}
@@ -639,6 +807,34 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
         />
       </Field>
 
+      <Field label={t('providerSearchEndpoint')} hint={t('providerSearchEndpointHint')}>
+        <input
+          className={styles.providerInput}
+          value={draft.searchEndpoint ?? ''}
+          placeholder="https://api.example.com/web-search"
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) => {
+            const value = event.target.value.trim()
+            update('searchEndpoint', value ? value : undefined)
+          }}
+        />
+      </Field>
+
+      <Field label={t('providerDeepseekSearchKey')} hint={t('providerDeepseekSearchKeyHint')}>
+        <input
+          className={styles.providerInput}
+          type="password"
+          value={draft.deepseekSearchKey ?? ''}
+          placeholder={t('providerDeepseekSearchKeyPlaceholder')}
+          autoComplete="off"
+          onChange={(event) => {
+            const value = event.target.value.trim()
+            update('deepseekSearchKey', value ? value : undefined)
+          }}
+        />
+      </Field>
+
       <div className={styles.field}>
         <div className={styles.fieldHeader}>
           <div className={styles.fieldLabel}>{t('providerModels')}</div>
@@ -657,6 +853,25 @@ const ProviderForm = ({ initial, onClose }: { initial: Provider | null; onClose:
           catalog={draft.catalog}
           onChange={(models) => update('models', models)}
         />
+        {draft.models.length > 0 ? (
+          <div className={styles.modelCapabilities}>
+            <div className={styles.fieldLabel}>{t('providerModelCapabilities')}</div>
+            <div className={styles.description}>{t('providerModelCapabilitiesHint')}</div>
+            {draft.models.map((model, index) => (
+              <ModelCapabilityRow
+                key={model.id}
+                model={model}
+                showSearch={!draft.searchEndpoint}
+                onChange={(next) =>
+                  update(
+                    'models',
+                    draft.models.map((item, itemIndex) => (itemIndex === index ? next : item))
+                  )
+                }
+              />
+            ))}
+          </div>
+        ) : null}
         {fetchError ? (
           <div className={styles.error}>{fetchError}</div>
         ) : (

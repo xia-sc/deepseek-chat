@@ -103,6 +103,7 @@ export const en = {
   settingsActiveModel: 'Current model',
   settingsActiveModelDescription:
     'New chats and regenerated replies use this model. Third-party providers do not offer web search or the file API.',
+  modelSwitcherLabel: 'Switch model',
   settingsActiveModelEmpty: 'No model selected',
   settingsActiveModelSearch: 'Search models or providers',
   storageUnavailable:
@@ -138,6 +139,14 @@ export const en = {
   providerProtocol: 'API protocol',
   providerApiKey: 'API key',
   providerApiKeyPlaceholder: 'Enter API key',
+  providerSearchEndpoint: 'Web search endpoint',
+  providerSearchEndpointHint:
+    'Optional. When set, the smart-search toggle searches first and injects the results into context; leave empty to disable.',
+  providerDeepseekSearchKey: 'DeepSeek search key',
+  providerDeepseekSearchKeyHint:
+    'Optional. When the provider has no search endpoint, this DeepSeek API key is used for the official web search; leave empty to use the global DeepSeek API key.',
+  providerDeepseekSearchKeyPlaceholder: 'Leave empty to use the global API key',
+  providerPresets: 'Quick presets',
   providerModels: 'Model catalog',
   providerModelsFetch: 'Fetch models',
   providerModelsFetching: 'Fetching...',
@@ -146,6 +155,17 @@ export const en = {
   providerModelsFailed: 'Failed to fetch models: {message}',
   providerModelsHint:
     'Fetched models are offered as candidates; only checked ones feed the model picker.',
+  providerModelCapabilities: 'Model capabilities',
+  providerModelCapabilitiesHint:
+    'Capabilities returned by the model endpoint are filled in automatically; set anything missing here.',
+  providerModelVision: 'Images',
+  providerModelWebSearch: 'Web search',
+  providerModelFiles: 'Files',
+  providerModelContextLength: 'Context length',
+  providerModelMaxOutput: 'Max output',
+  providerModelNoAttachment:
+    'This model is not configured for images or files. Enable it in Settings → Models.',
+  providerAttachmentUnsupported: 'The current model does not support some of the selected files.',
   providerCatalogEmptyHint:
     'No candidates yet. Fetch models at the top right, or type a model ID and press Enter.',
   providerCatalogEmpty: 'Select models',

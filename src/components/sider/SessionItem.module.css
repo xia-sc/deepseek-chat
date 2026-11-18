@@ -45,6 +45,11 @@
   margin-left: 4px;
 }
 
+/* 菜单打开期间按钮仍持有焦点：保持可见，避免鼠标移向菜单时锚点被隐藏 */
+.item:focus-within .action {
+  display: flex;
+}
+
 .renameInput {
   box-sizing: border-box;
   width: 100%;

@@ -33,6 +33,14 @@ declare const styles: {
   readonly "importConfirmText": string;
   readonly "deleteConfirm": string;
   readonly "deleteActions": string;
+  readonly "modelCapabilities": string;
+  readonly "modelCapabilityRow": string;
+  readonly "modelCapabilityName": string;
+  readonly "modelCapabilityToggle": string;
+  readonly "modelCapabilityNumber": string;
+  readonly "providerPresets": string;
+  readonly "providerPresetList": string;
+  readonly "providerPreset": string;
 };
 export = styles;
 

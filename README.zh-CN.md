@@ -19,18 +19,27 @@ pnpm dev
 
 打开 http://localhost:8090 。
 
+需要调桌面外壳（Electron 窗口、本地文件 IPC）时，开两个终端：
+
+```sh
+pnpm dev              # 终端 1：rspack dev server（http://localhost:8090）
+pnpm dev:desktop:win  # 终端 2：Electron 加载 dev server，改代码即时刷新
+```
+
+`dev:desktop:win` 会把 Electron 运行时复制到工作区外，因为被标了 Low 完整性标签的工作区会让工作区内的 Electron 一启动就崩溃。其他平台用 `pnpm dev:desktop`。只有需要发布时才执行 `pnpm dist:exe`。
+
 ## Windows 桌面版
 
 ```sh
 pnpm dist:exe
 ```
 
-产物为 `release-app/DeepSeek-Chat-<version>-portable.exe`，双击即可运行，无需安装。
+产物为 `E:/build/deepseek-chat/DeepSeek-Chat-<version>-portable.exe`，双击即可运行，无需安装。
 
-- 便携模式：exe 放任意文件夹（U 盘也行），配置与会话都保存在**同目录的 `data/`** 下，整个文件夹拷走即可迁移；该位置不可写（只读介质、Program Files 等）时自动退回 `%APPDATA%\DeepSeek Chat`。
-- 模型供应商与当前模型保存在 `data/config.json`，可直接备份或手工编辑；设置 → 模型 里能查看完整路径并打开所在文件夹。
-- 会话与附件保存在 `data/session/`。应用用固定端口 `127.0.0.1:37821` 托管页面，因此刷新或重启后数据不会因地址变化而丢失；端口被占用时会提示，而不是换端口。
-- 开发时可以先用 `pnpm build`，再执行 `pnpm desktop` 启动桌面外壳（此时使用系统用户数据目录）。
+- 配置、供应商密钥与会话都保存在 Windows 的系统用户数据目录 `%APPDATA%\DeepSeek Chat`，升级版本或移动 exe 都不会丢配置；需要便携数据时可设置环境变量 `DEEPSEEK_CHAT_DATA_DIR` 指定到 U 盘等位置。
+- 模型供应商与当前模型保存在该目录下的 `config.json`，可直接备份或手工编辑；设置 → 模型 里能查看完整路径并打开所在文件夹。
+- 会话与附件保存在同目录的 `session/` 下。应用用固定端口 `127.0.0.1:37821` 托管页面，因此刷新或重启后数据不会因地址变化而丢失；端口被占用时会提示，而不是换端口。
+- 开发时可以先用 `pnpm build`，再执行 `pnpm desktop` 启动桌面外壳（同样使用系统用户数据目录）。
 
 生成静态产物：
 

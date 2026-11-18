@@ -3,10 +3,23 @@ import { getDesktopBridge } from './desktop.js'
 import { useSettings } from './settings.js'
 
 /** 第三方供应商支持的请求协议 */
-export type ProviderProtocol = 'openai' | 'anthropic' | 'gemini'
+export type ProviderProtocol = 'openai' | 'anthropic' | 'gemini' | 'responses'
 
 /** 模型目录中的一项；name 仅用于展示，请求只用 id */
-export type ProviderModel = { id: string; name?: string }
+export type ProviderModel = {
+  id: string
+  name?: string
+  /** 是否接受图片输入；未设置表示未知，可用接口返回自动填充或手动配置 */
+  vision?: boolean
+  /** 是否接受非图片文件（PDF、文档等）输入；未设置表示未知 */
+  files?: boolean
+  /** 是否支持 Responses 的内置联网搜索（web_search）；未设置表示未知 */
+  search?: boolean
+  /** 上下文窗口 token 数；未设置表示未知 */
+  contextLength?: number
+  /** 单次回复最大输出 token 数；未设置表示未知 */
+  maxOutput?: number
+}
 
 /** 一个第三方供应商：地址、协议、密钥与模型目录 */
 export type Provider = {
@@ -18,6 +31,16 @@ export type Provider = {
   baseUrl: string
   protocol: ProviderProtocol
   apiKey: string
+  /**
+   * 应用侧联网搜索接口（可选）：打开智能搜索时先调用它检索，
+   * 再把结果注入请求上下文，因此不依赖模型自身是否支持内置 web_search。
+   */
+  searchEndpoint?: string
+  /**
+   * DeepSeek 官方 API Key（可选）：供应商没有自己的搜索接口时，
+   * 用这个 Key 调 DeepSeek 的 server tool 做联网搜索；留空则回退到全局 API Key。
+   */
+  deepseekSearchKey?: string
   /** 已选模型：进入模型选择器，请求只会用这些模型 */
   models: ProviderModel[]
   /** 从接口获取到的候选模型；仅用于下拉展示，未勾选的不进模型选择器 */
@@ -43,17 +66,31 @@ const ACTIVE_KEY = 'deepseek-chat:active-model'
 export const PROVIDER_ID_PATTERN = /^[a-z][a-z0-9_-]*$/
 
 const isProtocol = (value: unknown): value is ProviderProtocol =>
-  value === 'openai' || value === 'anthropic' || value === 'gemini'
+  value === 'openai' || value === 'anthropic' || value === 'gemini' || value === 'responses'
 
 const normalizeModel = (value: unknown): ProviderModel | null => {
   if (typeof value !== 'object' || value === null) {
     return null
   }
-  const { id, name } = value as Record<string, unknown>
+  const { id, name, vision, files, search, contextLength, maxOutput } = value as Record<
+    string,
+    unknown
+  >
   if (typeof id !== 'string' || !id.trim()) {
     return null
   }
-  return typeof name === 'string' && name.trim() ? { id: id.trim(), name: name.trim() } : { id: id.trim() }
+  const asBoolean = (input: unknown) => (typeof input === 'boolean' ? input : undefined)
+  const asPositive = (input: unknown) =>
+    typeof input === 'number' && Number.isFinite(input) && input > 0 ? Math.round(input) : undefined
+  return {
+    id: id.trim(),
+    ...(typeof name === 'string' && name.trim() ? { name: name.trim() } : {}),
+    ...(asBoolean(vision) === undefined ? {} : { vision: asBoolean(vision) }),
+    ...(asBoolean(files) === undefined ? {} : { files: asBoolean(files) }),
+    ...(asBoolean(search) === undefined ? {} : { search: asBoolean(search) }),
+    ...(asPositive(contextLength) === undefined ? {} : { contextLength: asPositive(contextLength) }),
+    ...(asPositive(maxOutput) === undefined ? {} : { maxOutput: asPositive(maxOutput) }),
+  }
 }
 
 /** 从存储读入时逐项校验，损坏的条目直接丢弃，不影响其余配置 */
@@ -61,7 +98,8 @@ const normalizeProvider = (value: unknown): Provider | null => {
   if (typeof value !== 'object' || value === null) {
     return null
   }
-  const { id, name, baseUrl, protocol, apiKey, models, catalog } = value as Record<string, unknown>
+  const { id, name, baseUrl, protocol, apiKey, searchEndpoint, deepseekSearchKey, models, catalog } =
+    value as Record<string, unknown>
   if (typeof id !== 'string' || !PROVIDER_ID_PATTERN.test(id) || id === OFFICIAL_PROVIDER_ID) {
     return null
   }
@@ -75,12 +113,16 @@ const normalizeProvider = (value: unknown): Provider | null => {
           return model ? [model] : []
         })
       : []
+  const searchUrl = typeof searchEndpoint === 'string' ? searchEndpoint.trim() : ''
+  const deepseekKey = typeof deepseekSearchKey === 'string' ? deepseekSearchKey.trim() : ''
   return {
     id,
     name: typeof name === 'string' && name.trim() ? name.trim() : id,
     baseUrl: baseUrl.trim(),
     protocol: isProtocol(protocol) ? protocol : 'openai',
     apiKey: typeof apiKey === 'string' ? apiKey : '',
+    ...(/^https?:\/\//.test(searchUrl) ? { searchEndpoint: searchUrl } : {}),
+    ...(deepseekKey ? { deepseekSearchKey: deepseekKey } : {}),
     models: toModels(models),
     ...(catalog === undefined ? {} : { catalog: toModels(catalog) }),
   }

@@ -19,18 +19,27 @@ pnpm dev
 
 Open http://localhost:8090.
 
+For desktop-shell development with hot reload, run the dev server in one terminal and the Electron shell in another:
+
+```sh
+pnpm dev              # terminal 1: rspack dev server on http://localhost:8090
+pnpm dev:desktop:win  # terminal 2: Electron loading the dev server
+```
+
+`dev:desktop:win` copies the Electron runtime outside the workspace, because a workspace marked with a Low integrity label makes an in-tree Electron crash on startup. On other platforms use `pnpm dev:desktop`. Only run `pnpm dist:exe` when you need a release build.
+
 ## Windows desktop build
 
 ```sh
 pnpm dist:exe
 ```
 
-This produces `release-app/DeepSeek-Chat-<version>-portable.exe`; double-click to run, no installation needed.
+This produces `E:/build/deepseek-chat/DeepSeek-Chat-<version>-portable.exe`; double-click to run, no installation needed.
 
-- Portable mode: put the exe in any folder (a USB stick works too). Settings and conversations are stored in `data/` **next to the exe**, so copying the folder migrates everything; if that location is not writable (read-only media, Program Files), the app falls back to `%APPDATA%\DeepSeek Chat`.
-- Provider and active-model settings live in `data/config.json`, which you can back up or edit by hand; Settings → Models shows the full path and can open its folder.
-- Conversations and attachments live in `data/session/`. The app serves the page on a fixed `127.0.0.1:37821`, so data survives restarts and reloads; if that port is taken the app reports it instead of switching ports.
-- For development, run `pnpm build` once and then `pnpm desktop` to launch the desktop shell (it uses the system user data directory).
+- Settings, provider keys and conversations are stored in `%APPDATA%\DeepSeek Chat` (the system user data directory) on Windows, so upgrading or moving the exe never loses your configuration. Set `DEEPSEEK_CHAT_DATA_DIR` to use a portable data folder instead (e.g. on a USB stick).
+- Provider and active-model settings live in `config.json` in that directory, which you can back up or edit by hand; Settings → Models shows the full path and can open its folder.
+- Conversations and attachments live under `session/` in the same directory. The app serves the page on a fixed `127.0.0.1:37821`, so data survives restarts and reloads; if that port is taken the app reports it instead of switching ports.
+- For development, run `pnpm build` once and then `pnpm desktop` to launch the desktop shell (it uses the same system user data directory).
 
 To build the static site:
 

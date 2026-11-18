@@ -2,7 +2,9 @@ import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import { streamProvider } from '../api/providerStream.js'
-import type { ChatModel, CreateMessageRequest } from '../api/types.js'
+import { searchWithDeepseek } from '../api/deepseekSearch.js'
+import { formatSearchContext, searchWeb } from '../api/webSearch.js'
+import type { ChatModel, CreateMessageRequest, InlineFileBlockParam } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import {
@@ -28,6 +30,7 @@ import {
   getContextRounds,
   settleReply,
   toRequestMessages,
+  type InlineFileResolver,
 } from './reply.js'
 import {
   toSessionSummary,
@@ -774,6 +777,87 @@ export const retryUpload = (sessionId: string, messageId: string) => {
 
 type Request = { history: Message[]; question: UserMessage; prefix?: AssistantMessage }
 
+/** 把本地原件读成 data URL，用于第三方协议的内联附件 */
+const toDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('读取附件失败'))
+    reader.readAsDataURL(blob)
+  })
+
+/**
+ * 应用侧联网搜索：打开搜索、模型自身不支持内置 web_search、且供应商配置了搜索能力时，
+ * 先把检索结果拼成上下文注入 system。搜索失败只降级为无上下文，不阻塞对话。
+ * 优先用供应商自己的搜索接口；没有时回退到 DeepSeek 官方搜索（供应商 Key 或全局 Key）。
+ */
+const buildSearchContext = async (
+  provider: Provider,
+  enabled: boolean,
+  question: string,
+  signal: AbortSignal
+): Promise<string> => {
+  if (!enabled || !question.trim()) {
+    return ''
+  }
+  const deepseekKey = provider.deepseekSearchKey ?? useSettings.getState().apiKey ?? ''
+  if (!provider.searchEndpoint && !deepseekKey) {
+    return ''
+  }
+  try {
+    const results = provider.searchEndpoint
+      ? await searchWeb(provider.searchEndpoint, provider.apiKey, question, signal)
+      : await searchWithDeepseek(deepseekKey, question, signal)
+    return formatSearchContext(question, results)
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 第三方供应商的内联附件解析器：按当前模型配置的能力过滤，
+ * 只把本地有原件的图片/文件读成 data URL；模型未配置能力时不带任何附件。
+ */
+const createInlineFileResolver = async (
+  provider: Provider,
+  request: Request,
+  modelId: string
+): Promise<InlineFileResolver | undefined> => {
+  const model = provider.models.find((item) => item.id === modelId)
+  const allowImage = model?.vision === true
+  const allowFile = model?.files === true
+  if (!allowImage && !allowFile) {
+    return undefined
+  }
+  const attachments = new Map<string, FileAttachment>()
+  for (const [user] of getContextRounds(request.history)) {
+    for (const file of user.files) {
+      attachments.set(file.id, file)
+    }
+  }
+  for (const file of request.question.files) {
+    attachments.set(file.id, file)
+  }
+  const inline = new Map<string, InlineFileBlockParam>()
+  for (const [id, file] of attachments) {
+    if (file.isImage ? !allowImage : !allowFile) {
+      continue
+    }
+    const blob = await db.loadFile(id)
+    if (!blob) {
+      continue
+    }
+    inline.set(id, {
+      type: 'inline_file',
+      name: file.name,
+      mimeType: file.mimeType || blob.type,
+      isImage: file.isImage,
+      dataUrl: await toDataUrl(blob),
+    })
+  }
+  return (file) => inline.get(file.id) ?? null
+}
+
 /** 把补传得到的 serverId 写回会话里所有引用同一附件的消息（编辑、重新生成会共用附件） */
 const saveServerIds = (sessionId: string, serverIds: Map<string, string>) => {
   if (serverIds.size === 0) {
@@ -1008,10 +1092,33 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           preparing = false
           throw new ApiError('http', { key: 'providerNotFound' })
         }
-        // 第三方供应商没有 Files API：附件不补传，也不进入请求
+        // 第三方供应商没有 Files API：附件改为发送前从本地原件内联，按模型能力过滤
         const prepared = provider
           ? refreshRequest(sessionId, request)
           : await prepareFiles(sessionId, request, controller.signal)
+        const model = initial.model ?? MODEL
+        // 当前模型的能力配置：内联附件与最大输出都来自这里
+        const modelConfig = provider?.models.find((item) => item.id === model)
+        // 只有 Responses 协议、模型声明支持、且供应商没有配置应用侧搜索接口时，
+        // 才声明内置 web_search。否则改用供应商的搜索接口：对 DeepSeek 这类不支持
+        // 内置搜索的模型，声明工具只会让它回答「无法调用联网工具」。
+        const providerSearch =
+          provider?.protocol === 'responses' &&
+          modelConfig?.search === true &&
+          (initial.search ?? false) &&
+          provider.searchEndpoint === undefined
+        const resolveInline = provider
+          ? await createInlineFileResolver(provider, prepared, model)
+          : undefined
+        // 内置 web_search 不可用时改走供应商的搜索接口，结果注入 system
+        const searchContext = provider
+          ? await buildSearchContext(
+              provider,
+              (initial.search ?? false) && !providerSearch,
+              prepared.question.content,
+              controller.signal
+            )
+          : ''
         preparing = false
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
         const latestReminder = prepared.prefix
@@ -1025,13 +1132,20 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           prepared.question,
           prepared.prefix,
           initial.thinking ?? false,
-          latestReminder
+          latestReminder,
+          resolveInline
         )
-        const model = initial.model ?? MODEL
         const events = provider
           ? streamProvider(
               provider,
-              { model, system: SYSTEM_PROMPT, messages, thinking: initial.thinking ?? false },
+              {
+                model,
+                system: searchContext ? `${SYSTEM_PROMPT}\n\n${searchContext}` : SYSTEM_PROMPT,
+                messages,
+                thinking: initial.thinking ?? false,
+                search: providerSearch,
+                maxOutput: modelConfig?.maxOutput,
+              },
               controller.signal
             )
           : streamMessage(

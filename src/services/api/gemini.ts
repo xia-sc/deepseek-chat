@@ -8,24 +8,46 @@ import type { MessageParam, MessageStreamEvent, MessageUsage, StopReason } from 
  * 把内部消息转成 contents + systemInstruction，再把 SSE 里的候选文本还原为内部流式事件。
  */
 
-type GeminiContent = { role: 'user' | 'model'; parts: { text: string }[] }
+type GeminiPart = { text: string } | { inline_data: { mime_type: string; data: string } }
 
-const textOf = (message: MessageParam): string => {
-  if (message.role === 'latest_reminder') {
-    return ''
+type GeminiContent = { role: 'user' | 'model'; parts: GeminiPart[] }
+
+/** 拆出 data URL 的 MIME 与 base64 体；不是 data URL 时按原始 base64 处理 */
+const parseDataUrl = (dataUrl: string) => {
+  const match = /^data:([^;,]*)(?:;[^,]*)?,(.*)$/s.exec(dataUrl)
+  return match
+    ? { mediaType: match[1] || 'application/octet-stream', data: match[2] ?? '' }
+    : { mediaType: 'application/octet-stream', data: dataUrl }
+}
+
+/** 内部内容块 → Gemini parts：文本转 text，内联附件转 inline_data */
+const toGeminiParts = (content: MessageParam['content']): GeminiPart[] => {
+  if (typeof content === 'string') {
+    return content ? [{ text: content }] : []
   }
-  return typeof message.content === 'string'
-    ? message.content
-    : message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n')
+  const parts: GeminiPart[] = []
+  for (const block of content) {
+    if (block.type === 'text') {
+      parts.push({ text: block.text })
+    } else if (block.type === 'inline_file') {
+      const { mediaType, data } = parseDataUrl(block.dataUrl)
+      parts.push({ inline_data: { mime_type: block.mimeType || mediaType, data } })
+    }
+  }
+  return parts
 }
 
 const toGeminiContents = (messages: MessageParam[]): GeminiContent[] =>
-  messages.flatMap((message) => {
-    const text = textOf(message)
-    if (!text.trim()) {
+  messages.flatMap((message): GeminiContent[] => {
+    if (message.role === 'latest_reminder') {
       return []
     }
-    return [{ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text }] }]
+    if (message.role === 'user') {
+      const parts = toGeminiParts(message.content)
+      return parts.length > 0 ? [{ role: 'user', parts }] : []
+    }
+    const text = message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('')
+    return text.trim() ? [{ role: 'model', parts: [{ text }] }] : []
   })
 
 const STOP_REASONS: Record<string, StopReason> = {
@@ -49,6 +71,8 @@ export type GeminiRequest = {
   model: string
   system: string
   messages: MessageParam[]
+  /** 模型配置的最大输出 token 数；未配置时不发送 generationConfig */
+  maxOutput?: number
 }
 
 /** POST {baseUrl}/models/{model}:streamGenerateContent?alt=sse */
@@ -69,6 +93,7 @@ export async function* streamGemini(
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: body.system }] },
       contents: toGeminiContents(body.messages),
+      ...(body.maxOutput ? { generationConfig: { maxOutputTokens: body.maxOutput } } : {}),
     }),
     signal,
   })

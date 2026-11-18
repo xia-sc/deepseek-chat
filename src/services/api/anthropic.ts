@@ -8,12 +8,50 @@ import type { MessageParam, MessageStreamEvent } from './types.js'
  * 因此去掉 DeepSeek 的 latest_reminder、文件引用与联网搜索工具，只保留文本对话。
  */
 
-type AnthropicMessage = { role: 'user' | 'assistant'; content: string }
+type AnthropicContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  | { type: 'document'; source: { type: 'base64'; media_type: string; data: string } }
 
-const toText = (content: MessageParam['content']): string =>
+type AnthropicMessage = { role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }
+
+/** 拆出 data URL 的 MIME 与 base64 体；不是 data URL 时按原始 base64 处理 */
+const parseDataUrl = (dataUrl: string) => {
+  const match = /^data:([^;,]*)(?:;[^,]*)?,(.*)$/s.exec(dataUrl)
+  return match
+    ? { mediaType: match[1] || 'application/octet-stream', data: match[2] ?? '' }
+    : { mediaType: 'application/octet-stream', data: dataUrl }
+}
+
+/**
+ * 内部内容块 → Anthropic content：文本拼字符串，内联图片用 base64 image，
+ * 其余文件用 base64 document；DeepSeek 的 file_id 引用在第三方协议里没有对应物，丢弃。
+ */
+const toAnthropicContent = (
+  content: MessageParam['content']
+): string | AnthropicContentBlock[] => {
+  if (typeof content === 'string') {
+    return content
+  }
+  const blocks: AnthropicContentBlock[] = []
+  for (const block of content) {
+    if (block.type === 'text') {
+      blocks.push({ type: 'text', text: block.text })
+    } else if (block.type === 'inline_file') {
+      const { mediaType, data } = parseDataUrl(block.dataUrl)
+      blocks.push({
+        type: block.isImage ? 'image' : 'document',
+        source: { type: 'base64', media_type: block.mimeType || mediaType, data },
+      })
+    }
+  }
+  return blocks.length === 1 && blocks[0]?.type === 'text' ? blocks[0].text : blocks
+}
+
+const hasContent = (content: string | AnthropicContentBlock[]) =>
   typeof content === 'string'
-    ? content
-    : content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n')
+    ? content.trim() !== ''
+    : content.some((block) => block.type !== 'text' || block.text.trim() !== '')
 
 const toAnthropicMessages = (messages: MessageParam[]): AnthropicMessage[] => {
   const converted: AnthropicMessage[] = []
@@ -21,12 +59,16 @@ const toAnthropicMessages = (messages: MessageParam[]): AnthropicMessage[] => {
     if (message.role === 'latest_reminder') {
       continue
     }
-    const text =
-      message.role === 'user'
-        ? toText(message.content)
-        : message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('')
+    if (message.role === 'user') {
+      const content = toAnthropicContent(message.content)
+      if (hasContent(content)) {
+        converted.push({ role: 'user', content })
+      }
+      continue
+    }
+    const text = message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('')
     if (text.trim()) {
-      converted.push({ role: message.role, content: text })
+      converted.push({ role: 'assistant', content: text })
     }
   }
   return converted
@@ -37,6 +79,8 @@ export type AnthropicRequest = {
   system: string
   messages: MessageParam[]
   thinking?: boolean
+  /** 模型配置的最大输出 token 数；未配置时用协议默认值 */
+  maxOutput?: number
 }
 
 /**
@@ -59,8 +103,8 @@ export async function* streamAnthropic(
     },
     body: JSON.stringify({
       model: body.model,
-      // Anthropic 要求显式给出输出上限
-      max_tokens: 8192,
+      // Anthropic 要求显式给出输出上限；优先用模型配置的值
+      max_tokens: body.maxOutput ?? 8192,
       system: body.system,
       messages: toAnthropicMessages(body.messages),
       stream: true,

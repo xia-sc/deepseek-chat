@@ -1,6 +1,6 @@
 {
   "name": "deepseek-chat",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "基于 DeepSeek API 的静态聊天示例。",
   "license": "MIT",
   "author": "xia-sc",
@@ -9,6 +9,8 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
+    "dev:desktop": "cross-env DEEPSEEK_CHAT_DEV_URL=http://localhost:8090 electron . --no-sandbox",
+    "dev:desktop:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-desktop.ps1",
     "build": "rspack build -c rspack.config.ts",
     "desktop": "pnpm build && electron .",
     "dist:exe": "pnpm check:main && pnpm build && electron-builder --win",
@@ -21,7 +23,7 @@
     "appId": "com.deepseek.chat.desktop",
     "productName": "DeepSeek Chat",
     "directories": {
-      "output": "release-app"
+      "output": "E:/build/deepseek-chat"
     },
     "files": [
       "dist/**/*",

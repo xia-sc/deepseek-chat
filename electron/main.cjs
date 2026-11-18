@@ -24,6 +24,9 @@ process.on('unhandledRejection', writeCrashLog)
  */
 
 const DEFAULT_PORT = Number(process.env.DEEPSEEK_CHAT_PORT ?? 37821)
+// 开发模式：设置该环境变量后直接加载 rspack dev server，改前端代码即时刷新，无需打包。
+// 生产运行不设置它，仍然由内置静态服务托管 dist。
+const DEV_URL = process.env.DEEPSEEK_CHAT_DEV_URL
 const DIST_DIR = path.join(__dirname, '..', 'dist')
 const RESOURCES_DIR = path.join(__dirname, '..', 'resources')
 
@@ -31,52 +34,33 @@ const RESOURCES_DIR = path.join(__dirname, '..', 'resources')
 app.setName('DeepSeek Chat')
 
 /**
- * 便携模式：portable 启动器会把 PORTABLE_EXECUTABLE_DIR 指向用户双击 exe 所在的目录。
- * 配置与会话都放在该目录的 data/ 下，整个文件夹拷走即可迁移；
- * 该位置不可写（只读介质、Program Files 等）时退回系统用户数据目录。
+ * 数据根目录固定为系统用户数据目录（Windows 上是 %APPDATA%\DeepSeek Chat），
+ * 这样升级版本或移动 exe 位置都不会丢配置；
+ * 需要便携数据时用环境变量 DEEPSEEK_CHAT_DATA_DIR 指定（例如 U 盘场景）。
  */
-/**
- * 数据根目录：
- * - portable 启动器会设置 PORTABLE_EXECUTABLE_DIR，指向用户双击 exe 的目录；
- * - zip 免安装版没有启动器，直接用 exe 自身所在目录；
- * - 开发运行（未打包）不启用便携目录，沿用系统用户数据目录。
- */
-const resolvePortableRoot = () => {
-  if (process.env.PORTABLE_EXECUTABLE_DIR) {
-    return process.env.PORTABLE_EXECUTABLE_DIR
+const resolveDataRoot = () => {
+  const explicit = process.env.DEEPSEEK_CHAT_DATA_DIR
+  if (explicit) {
+    return explicit
   }
-  return app.isPackaged ? path.dirname(process.execPath) : null
-}
-
-const resolvePortableDataDir = () => {
-  const root = resolvePortableRoot()
-  if (!root) {
-    return null
-  }
-  const dir = path.join(root, 'data')
   try {
-    fsSync.mkdirSync(dir, { recursive: true })
-    const probe = path.join(dir, '.write-test')
-    fsSync.writeFileSync(probe, 'ok')
-    fsSync.unlinkSync(probe)
-    return dir
+    return path.join(app.getPath('appData'), 'DeepSeek Chat')
   } catch {
-    return null
+    // 极端情况下取不到系统目录，退回当前工作目录下的数据文件夹
+    return path.join(process.cwd(), 'DeepSeek Chat')
   }
 }
 
-const portableDataDir = resolvePortableDataDir()
-if (portableDataDir) {
-  try {
-    // app.setPath 要求目标目录已经存在，否则会抛异常导致主进程启动即退出
-    const sessionDir = path.join(portableDataDir, 'session')
-    fsSync.mkdirSync(sessionDir, { recursive: true })
-    app.setPath('userData', portableDataDir)
-    // Chromium 的缓存、IndexedDB、Local Storage 都跟着数据目录走
-    app.setPath('sessionData', sessionDir)
-  } catch {
-    // 切换失败时保持默认用户数据目录，至少能正常启动
-  }
+const dataRoot = resolveDataRoot()
+try {
+  // app.setPath 要求目标目录已经存在，否则会抛异常导致主进程启动即退出
+  const sessionDir = path.join(dataRoot, 'session')
+  fsSync.mkdirSync(sessionDir, { recursive: true })
+  app.setPath('userData', dataRoot)
+  // Chromium 的缓存、IndexedDB、Local Storage 都跟着会话目录走
+  app.setPath('sessionData', sessionDir)
+} catch {
+  // 切换失败时保持默认用户数据目录，至少能正常启动
 }
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -96,28 +80,35 @@ const MIME = {
   '.map': 'application/json; charset=utf-8',
 }
 
-const configFile = () => path.join(app.getPath('userData'), 'config.json')
+const configFile = () => path.join(dataRoot, 'config.json')
 
-/** 旧版本（非便携）把配置放在 %APPDATA%\DeepSeek Chat\config.json */
-const legacyConfigFile = () => path.join(app.getPath('appData'), 'DeepSeek Chat', 'config.json')
-
-/** 便携版首次启动：如果本地还没有配置，把旧版本的配置复制过来，避免重新配置 */
-const migrateLegacyConfig = async () => {
-  if (!portableDataDir) {
+/**
+ * 旧版便携模式把配置和会话放在 exe 同目录的 data/ 下；
+ * 升级后首次启动时把它们迁移到系统数据目录，避免用户重新配置。
+ */
+const migratePortableData = async () => {
+  const portableRoots = [
+    process.env.PORTABLE_EXECUTABLE_DIR,
+    app.isPackaged ? path.dirname(process.execPath) : null,
+  ].filter(Boolean)
+  const legacyRoot = portableRoots
+    .map((root) => path.join(root, 'data'))
+    .find((dir) => dir !== dataRoot && fsSync.existsSync(path.join(dir, 'config.json')))
+  if (!legacyRoot) {
     return
   }
-  const target = configFile()
   try {
-    await fs.access(target)
-    return
+    if (!fsSync.existsSync(configFile())) {
+      await fs.mkdir(path.dirname(configFile()), { recursive: true })
+      await fs.copyFile(path.join(legacyRoot, 'config.json'), configFile())
+    }
+    const legacySession = path.join(legacyRoot, 'session')
+    const targetSession = path.join(dataRoot, 'session')
+    if (fsSync.existsSync(legacySession) && !fsSync.existsSync(path.join(targetSession, 'Local Storage'))) {
+      await fs.cp(legacySession, targetSession, { recursive: true })
+    }
   } catch {
-    // 本地还没有配置文件，继续尝试迁移
-  }
-  try {
-    await fs.mkdir(path.dirname(target), { recursive: true })
-    await fs.copyFile(legacyConfigFile(), target)
-  } catch {
-    // 没有旧配置或复制失败时保持空白配置
+    // 迁移失败时保持空白配置，用户可手工把旧 data/ 目录复制过来
   }
 }
 
@@ -206,7 +197,7 @@ const createWindow = () => {
     mainWindow = null
   })
 
-  win.loadURL(`http://127.0.0.1:${DEFAULT_PORT}/`)
+  win.loadURL(DEV_URL ?? `http://127.0.0.1:${DEFAULT_PORT}/`)
   return win
 }
 
@@ -226,7 +217,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null)
-    await migrateLegacyConfig()
+    await migratePortableData()
     ipcMain.handle('config:read', () => readConfig())
     ipcMain.handle('config:write', (_event, data) => writeConfig(data))
     ipcMain.handle('config:path', () => configFile())
@@ -235,16 +226,19 @@ if (!app.requestSingleInstanceLock()) {
       shell.showItemInFolder(configFile())
     })
 
-    try {
-      await serve(DIST_DIR)
-    } catch (error) {
-      dialog.showErrorBox(
-        '端口被占用',
-        `无法在 127.0.0.1:${DEFAULT_PORT} 启动本地服务（${error?.code ?? error}）。\n` +
-          '请先关闭占用该端口的程序再重新打开本应用。'
-      )
-      app.quit()
-      return
+    // 开发模式直接连 dev server，不再启动内置静态服务
+    if (!DEV_URL) {
+      try {
+        await serve(DIST_DIR)
+      } catch (error) {
+        dialog.showErrorBox(
+          '端口被占用',
+          `无法在 127.0.0.1:${DEFAULT_PORT} 启动本地服务（${error?.code ?? error}）。\n` +
+            '请先关闭占用该端口的程序再重新打开本应用。'
+        )
+        app.quit()
+        return
+      }
     }
 
     createWindow()

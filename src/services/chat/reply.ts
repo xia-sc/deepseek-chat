@@ -1,6 +1,7 @@
 import type {
   AssistantBlockParam,
   FileBlockParam,
+  InlineFileBlockParam,
   MessageParam,
   MessageStreamEvent,
   OutputBlockStart,
@@ -30,6 +31,23 @@ const toFileBlocks = (files: FileAttachment[]): FileBlockParam[] =>
         ]
       : []
   )
+
+/**
+ * 第三方协议内联附件的解析器：发送前把本地原件读成 data URL，
+ * 返回 null 表示本地没有原件，该附件不进入请求。
+ */
+export type InlineFileResolver = (file: FileAttachment) => InlineFileBlockParam | null
+
+const toUserBlocks = (
+  files: FileAttachment[],
+  resolveInline?: InlineFileResolver
+): (FileBlockParam | InlineFileBlockParam)[] =>
+  resolveInline
+    ? files.flatMap((file) => {
+        const block = resolveInline(file)
+        return block ? [block] : []
+      })
+    : toFileBlocks(files)
 
 const toReplyBlock = (block: OutputBlockStart, now: number): ReplyBlock | null => {
   switch (block.type) {
@@ -202,8 +220,11 @@ const isUsableReply = (message: Message): message is AssistantMessage =>
   getReplyText(message) !== ''
 
 /** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
-const toUserParam = ({ content, files }: UserMessage): MessageParam => {
-  const blocks = toFileBlocks(files)
+const toUserParam = (
+  { content, files }: UserMessage,
+  resolveInline?: InlineFileResolver
+): MessageParam => {
+  const blocks = toUserBlocks(files, resolveInline)
   return blocks.length === 0
     ? { role: 'user', content }
     : {
@@ -305,7 +326,8 @@ export const toRequestMessages = (
   question: UserMessage,
   prefix?: AssistantMessage,
   thinking = prefix?.thinking ?? false,
-  latestReminder?: string
+  latestReminder?: string,
+  resolveInline?: InlineFileResolver
 ): MessageParam[] => {
   const messages: MessageParam[] = []
   let previousReminder: string | undefined
@@ -318,14 +340,14 @@ export const toRequestMessages = (
   }
   for (const [user, reply] of getContextRounds(history)) {
     // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略。
-    if (!user.content && toFileBlocks(user.files).length === 0) {
+    if (!user.content && toUserBlocks(user.files, resolveInline).length === 0) {
       continue
     }
     appendReminder(reply.latestReminder)
-    messages.push(toUserParam(user), toAssistantParam(reply))
+    messages.push(toUserParam(user, resolveInline), toAssistantParam(reply))
   }
   appendReminder(latestReminder)
-  messages.push(toUserParam(question))
+  messages.push(toUserParam(question, resolveInline))
   if (prefix?.prefix) {
     const assistant = toAssistantParam(prefix, true, thinking)
     // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。

@@ -148,6 +148,8 @@ const enqueueUpload = (
 export type UploadTask =
   | { status: 'uploading' }
   | { status: 'done'; serverId: string }
+  /** 第三方供应商没有 Files API：附件随请求内联发送，无需上传 */
+  | { status: 'inline' }
   | { status: 'error'; error: TranslationMessage; retryable: boolean }
 
 type UploadState = { tasks: Record<string, UploadTask> }
@@ -160,6 +162,10 @@ const setTask = (id: string, task: UploadTask | null) =>
       ? { ...state.tasks, [id]: task }
       : Object.fromEntries(Object.entries(state.tasks).filter(([key]) => key !== id)),
   }))
+
+/** 第三方内联附件：不经过 Files API，直接标记为可发送（发送时从本地原件读成 data URL） */
+export const markInlineAttachment = (id: string) =>
+  useUploads.setState((state) => ({ tasks: { ...state.tasks, [id]: { status: 'inline' } } }))
 
 const pending = new Map<string, { promise: Promise<string>; controller: AbortController }>()
 

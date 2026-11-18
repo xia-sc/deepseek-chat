@@ -134,6 +134,25 @@ export type FileBlockParam = {
   source: { type: 'file'; file_id: string }
 }
 
+/**
+ * 第三方协议的内联附件：请求前从本地原件读出并转成 data URL 放进消息体，
+ * 不经过 Files API（第三方供应商没有 DeepSeek 的文件接口）。
+ */
+export type InlineFileBlockParam = {
+  type: 'inline_file'
+  /** 原始文件名，用于 OpenAI 的 file 部分与调试 */
+  name: string
+  /** 原始 MIME；未知时为空串，由协议层按扩展名或图片类型兜底 */
+  mimeType: string
+  /** 是否按图片发送（image_url / image / inline_data 都以 MIME 区分） */
+  isImage: boolean
+  /** data:<mime>;base64,<...> */
+  dataUrl: string
+}
+
+/** 用户消息里可能出现的内容块 */
+export type UserContentBlock = FileBlockParam | TextBlockParam | InlineFileBlockParam
+
 /** 接口接受的调用块；历史只回传 kind 为 read_link 的调用 */
 export type ServerToolUseBlockParam = Pick<
   ServerToolUseBlock,
@@ -157,7 +176,7 @@ export type AssistantBlockParam =
 export type MessageParam =
   /** Chat Engine 扩展角色，位于对应 user 前；需服务端支持 latest_reminder。 */
   | { role: 'latest_reminder'; content: string }
-  | { role: 'user'; content: string | (FileBlockParam | TextBlockParam)[] }
+  | { role: 'user'; content: string | UserContentBlock[] }
   | { role: 'assistant'; content: AssistantBlockParam[] }
 
 /** 开启联网搜索与边想边搜 */

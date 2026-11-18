@@ -8,7 +8,7 @@ import {
   IconThinkOutline14,
 } from '../base/icons.js'
 import { setSearch, setThinking, useSettings } from '../../services/settings.js'
-import { useActiveProvider } from '../../services/providers.js'
+import { useActiveProvider, useProviders } from '../../services/providers.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
 import {
@@ -27,8 +27,9 @@ import { Tooltip } from '../base/Tooltip.js'
 import { ensureApiKey } from '../settings/settingsDialogState.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
-import { ACCEPT, useUploads } from '../../services/attachments.js'
+import { ACCEPT, isImage, resolveMimeType, useUploads } from '../../services/attachments.js'
 import { DraftAttachments } from './DraftAttachments.js'
+import { ModelSwitcher } from './ModelSwitcher.js'
 import { useVoiceInput } from './useVoiceInput.js'
 import { VoiceButton } from './VoiceButton.js'
 import { Spectrum } from './Spectrum.js'
@@ -51,9 +52,27 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     (state) => sessionId !== null && Object.hasOwn(state.streaming, sessionId)
   )
   const thinking = useSettings((state) => state.thinking)
+  // 全局 DeepSeek API Key：第三方供应商没有搜索接口时，用它调用 DeepSeek 官方搜索
+  const apiKey = useSettings((state) => state.apiKey)
   const importingHistory = useChatStore((state) => state.importingHistory)
-  // 第三方供应商没有 Files API 与 DeepSeek 扩展：附件与两个开关都不可用
-  const thirdParty = useActiveProvider() !== null
+  const activeProvider = useActiveProvider()
+  const thirdParty = activeProvider !== null
+  const activeModel = useProviders((state) => {
+    const provider = state.providers.find((item) => item.id === state.active.providerId)
+    return provider?.models.find((model) => model.id === state.active.modelId)
+  })
+  const showThinking = !thirdParty
+  // 第三方联网搜索可用条件：供应商搜索接口 / DeepSeek 官方 Key（供应商或全局）/ 内置搜索能力
+  const showSearch =
+    !thirdParty ||
+    activeProvider?.searchEndpoint !== undefined ||
+    activeProvider?.deepseekSearchKey !== undefined ||
+    Boolean(apiKey) ||
+    (activeProvider?.protocol === 'responses' && activeModel?.search === true)
+  // 官方走 Files API，附件始终可用；第三方看模型探测或手动配置的能力
+  const allowImage = thirdParty ? activeModel?.vision === true : true
+  const allowFiles = thirdParty ? activeModel?.files === true : true
+  const canAttach = allowImage || allowFiles
   const isMobile = useIsMobile()
   const search = useSettings((state) => state.search)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -78,14 +97,24 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   }, [t])
 
   const acceptFiles = (files: File[]) => {
-    if (thirdParty) {
-      showToast({ key: 'providerNoAttachments' })
-      return
-    }
     if (files.length === 0 || useChatStore.getState().importingHistory || !ensureApiKey()) {
       return
     }
-    const error = addDraftFiles(sessionId, files, useSettings.getState().apiKey ?? '')
+    if (thirdParty) {
+      if (!canAttach) {
+        showToast({ key: 'providerModelNoAttachment' })
+        return
+      }
+      // 按模型能力分别校验图片与非图片文件
+      const unsupported = files.find((file) =>
+        isImage(resolveMimeType(file)) ? !allowImage : !allowFiles
+      )
+      if (unsupported) {
+        showToast({ key: 'providerAttachmentUnsupported' })
+        return
+      }
+    }
+    const error = addDraftFiles(sessionId, files, useSettings.getState().apiKey ?? '', thirdParty)
     if (error) {
       showToast(error)
     }
@@ -207,36 +236,41 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
         </div>
       </div>
       <div className={styles.functionRow}>
-        {/* 深度思考与智能搜索是 DeepSeek 扩展能力，第三方供应商下不提供 */}
-        {thirdParty ? null : (
+        {/* 深度思考是 DeepSeek 扩展；智能搜索在 Responses 协议下也可用（内置 web_search） */}
+        {showThinking || showSearch ? (
           <div ref={togglesRef} className={styles.toggles}>
-            <Tooltip content={t('deactivatedThinkTooltip')}>
-              <button
-                type="button"
-                className={clsx(styles.toggle, thinking && styles.selected)}
-                aria-label={t('thinkingSwitch')}
-                aria-pressed={thinking}
-                onClick={() => setThinking(!thinking)}
-              >
-                <IconThinkOutline14 />
-                <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
-              </button>
-            </Tooltip>
-            <Tooltip content={t('deactivatedSearchTooltip')}>
-              <button
-                type="button"
-                className={clsx(styles.toggle, search && styles.selected)}
-                aria-label={t('search')}
-                aria-pressed={search}
-                onClick={() => setSearch(!search)}
-              >
-                <IconGlobeLanguageOutline14 />
-                <span className={styles.toggleLabel}>{t('search')}</span>
-              </button>
-            </Tooltip>
+            {showThinking ? (
+              <Tooltip content={t('deactivatedThinkTooltip')}>
+                <button
+                  type="button"
+                  className={clsx(styles.toggle, thinking && styles.selected)}
+                  aria-label={t('thinkingSwitch')}
+                  aria-pressed={thinking}
+                  onClick={() => setThinking(!thinking)}
+                >
+                  <IconThinkOutline14 />
+                  <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
+                </button>
+              </Tooltip>
+            ) : null}
+            {showSearch ? (
+              <Tooltip content={t('deactivatedSearchTooltip')}>
+                <button
+                  type="button"
+                  className={clsx(styles.toggle, search && styles.selected)}
+                  aria-label={t('search')}
+                  aria-pressed={search}
+                  onClick={() => setSearch(!search)}
+                >
+                  <IconGlobeLanguageOutline14 />
+                  <span className={styles.toggleLabel}>{t('search')}</span>
+                </button>
+              </Tooltip>
+            ) : null}
           </div>
-        )}
+        ) : null}
         <div className={styles.right}>
+          <ModelSwitcher />
           <VoiceButton
             status={voice.status}
             disabled={!voice.available}
@@ -254,8 +288,8 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             size="m"
             tone="primary"
             icon={<IconPaperclipOutline16 />}
-            tooltip={thirdParty ? t('providerNoAttachments') : t('uploadFile')}
-            disabled={importingHistory || thirdParty}
+            tooltip={thirdParty && !canAttach ? t('providerModelNoAttachment') : t('uploadFile')}
+            disabled={importingHistory || !canAttach}
             onClick={() => ensureApiKey() && fileInputRef.current?.click()}
           />
           <input

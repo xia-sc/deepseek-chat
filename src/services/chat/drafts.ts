@@ -4,6 +4,7 @@ import { createId } from '../../utils/id.js'
 import {
   cancelUpload,
   isImage,
+  markInlineAttachment,
   resolveMimeType,
   uploadAttachment,
   validateFiles,
@@ -57,11 +58,12 @@ const upload = (attachment: DraftAttachment, apiKey: string) => {
   ).catch(() => {})
 }
 
-/** 整批校验通过后才创建预览和开始上传。 */
+/** 整批校验通过后才创建预览和开始上传；inline 为第三方供应商，不走 Files API。 */
 export const addDraftFiles = (
   sessionId: string | null,
   files: File[],
-  apiKey: string
+  apiKey: string,
+  inline = false
 ): TranslationMessage | null => {
   if (files.length === 0) {
     return null
@@ -80,7 +82,11 @@ export const addDraftFiles = (
     }
   })
   updateDraft(sessionId, (draft) => ({ ...draft, attachments: [...draft.attachments, ...added] }))
-  added.forEach((attachment) => upload(attachment, apiKey))
+  if (inline) {
+    added.forEach((attachment) => markInlineAttachment(attachment.id))
+  } else {
+    added.forEach((attachment) => upload(attachment, apiKey))
+  }
   return null
 }
 
@@ -95,15 +101,27 @@ export const retryDraftAttachment = (
   }
 }
 
-/** 发送按钮和实际提交共用规则：有内容，且全部附件已上传成功。 */
+/** 发送按钮和实际提交共用规则：有内容，且全部附件已上传成功（内联附件无需上传）。 */
 export const prepareDraftMessage = (draft: Draft, tasks: Record<string, UploadTask>) => {
   const text = draft.text.trim()
   if (!text && draft.attachments.length === 0) {
     return null
   }
-  const files: (FileAttachment & { serverId: string; blob: Blob })[] = []
+  const files: (FileAttachment & { blob: Blob })[] = []
   for (const attachment of draft.attachments) {
     const task = tasks[attachment.id]
+    if (task?.status === 'inline') {
+      files.push({
+        id: attachment.id,
+        serverId: null,
+        name: attachment.file.name,
+        size: attachment.file.size,
+        isImage: attachment.isImage,
+        mimeType: resolveMimeType(attachment.file),
+        blob: attachment.file,
+      })
+      continue
+    }
     if (task?.status !== 'done' || !task.serverId) {
       return null
     }

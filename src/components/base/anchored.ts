@@ -129,6 +129,11 @@ export const useAnchoredPosition = <T extends HTMLElement, F extends HTMLElement
       return
     }
     const rect = anchor.getBoundingClientRect()
+    // 锚点被隐藏时（例如只在 hover 时显示的按钮，鼠标移向浮层后收起）不要用空矩形
+    // 重新定位，否则浮层会跳到视口左上角；保持上一次的位置即可。
+    if (rect.width === 0 && rect.height === 0) {
+      return
+    }
     const spaceAbove = rect.top - offset - VIEWPORT_PADDING
     const spaceBelow = window.innerHeight - rect.bottom - offset - VIEWPORT_PADDING
 

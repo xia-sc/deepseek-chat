@@ -11,6 +11,9 @@ const Module = require('node:module')
 const probeRoot = path.join(os.tmpdir(), `ds-chat-probe-${Date.now()}`)
 fs.mkdirSync(probeRoot, { recursive: true })
 process.env.PORTABLE_EXECUTABLE_DIR = probeRoot
+// 模拟旧便携版留在 exe 同目录 data/ 下的配置，验证升级后能自动迁移
+fs.mkdirSync(path.join(probeRoot, 'data'), { recursive: true })
+fs.writeFileSync(path.join(probeRoot, 'data', 'config.json'), JSON.stringify({ providers: [], active: null }))
 
 const state = {
   paths: { appData: path.join(probeRoot, 'appdata'), temp: os.tmpdir() },
@@ -91,11 +94,12 @@ process.on('uncaughtException', (error) => {
 require(path.resolve(__dirname, '..', 'electron', 'main.cjs'))
 
 setTimeout(() => {
-  const dataDir = path.join(probeRoot, 'data')
+  const dataDir = path.join(probeRoot, 'appdata', 'DeepSeek Chat')
   const sessionDir = path.join(dataDir, 'session')
   console.log('app name          :', state.appName)
   console.log('data dir exists   :', fs.existsSync(dataDir))
   console.log('session dir exists:', fs.existsSync(sessionDir))
+  console.log('config migrated   :', fs.existsSync(path.join(dataDir, 'config.json')))
   console.log('setPath calls     :', JSON.stringify(state.setPathCalls))
   console.log('ipc handlers      :', state.handlers.join(', '))
   console.log('window icon       :', state.windowOptions?.icon)

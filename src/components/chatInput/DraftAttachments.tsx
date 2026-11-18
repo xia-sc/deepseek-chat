@@ -90,7 +90,8 @@ const AttachmentItem = ({
     <FileCard
       name={item.file.name}
       size={item.file.size}
-      status={status}
+      // 内联附件无需上传，按已完成展示
+      status={status === 'inline' ? 'done' : status}
       error={error}
       onRetry={retry}
       onRemove={onRemove}
