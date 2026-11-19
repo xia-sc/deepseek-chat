@@ -6,6 +6,7 @@ import type { DraftAttachment } from '../../services/chat/drafts.js'
 import { IconCloseFill14, IconRefreshOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { FileCard } from '../files/FileCard.js'
+import { useFileView } from '../files/useFileView.js'
 import styles from './ChatInput.module.css'
 
 const UPLOADING: UploadTask = { status: 'uploading' }
@@ -48,8 +49,11 @@ const AttachmentItem = ({
   onRemove: () => void
 }) => {
   const t = useTranslate()
+  const { image, url, link } = useFileView(item.file, item.file.name)
   const task = useUploads((state) => state.tasks[item.id] ?? UPLOADING)
+  // 内联附件无需上传，按已完成展示
   const status = task.status
+  const viewStatus = status === 'inline' ? 'done' : status
   const error = task.status === 'error' ? t(task.error.key, task.error.params) : undefined
   // 过大、格式不支持等重试无效的失败只提示原因，需删除后再发送
   const retry = task.status === 'error' && task.retryable ? onRetry : undefined
@@ -57,12 +61,13 @@ const AttachmentItem = ({
   const retryLabel = t('uploadRetry', { message: error ?? t('uploadFileStatusFailed') })
   // 「上传失败」只显示重试图标，其余原因写在图片上：可重试时在图标下方，不可重试时贴底
   const showReason = failed && error !== undefined && error !== t('uploadFileStatusFailed')
-  return item.previewUrl ? (
+  const preview = url ? <img src={url} alt={item.file.name} /> : null
+  return image && url !== null ? (
     <div
       className={clsx(styles.attachment, failed && styles.attachmentFailed)}
       title={error ?? item.file.name}
     >
-      <img src={item.previewUrl} alt={item.file.name} />
+      {link && viewStatus === 'done' ? <a {...link}>{preview}</a> : preview}
       {status === 'uploading' ? <div className={styles.uploading} /> : null}
       {failed && retry ? (
         <Tooltip content={retryLabel}>
@@ -90,8 +95,8 @@ const AttachmentItem = ({
     <FileCard
       name={item.file.name}
       size={item.file.size}
-      // 内联附件无需上传，按已完成展示
-      status={status === 'inline' ? 'done' : status}
+      status={viewStatus}
+      link={link}
       error={error}
       onRetry={retry}
       onRemove={onRemove}
