@@ -1,6 +1,6 @@
 {
   "name": "deepseek-chat",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "基于 DeepSeek API 的静态聊天示例。",
   "license": "MIT",
   "author": "xia-sc",
