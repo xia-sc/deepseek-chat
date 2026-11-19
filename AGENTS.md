@@ -103,6 +103,23 @@
   - exe 同目录**不**生成 `data/`。
 - 在 DSH 会话内验证窗口启动：需 `--no-sandbox` 且清掉 `ELECTRON_RUN_AS_NODE`；cwd 建议在工作区外运行时上操作（见坑 1）。
 
+## Node.js 版本迁移约定
+
+本机 Node 由 nvm-windows 管理。2026-11 迁移到 v26.13.1 时踩过权限坑，下次迁移按下面执行（下文用 `<NVM_HOME>` 表示 nvm 安装根目录）：
+
+- **结构**：版本目录为 `<NVM_HOME>\nvm\v*`，激活版本是 `<NVM_HOME>\.nodejs` 链接。全局包按版本独立存放，除 `node_modules` 外还有**版本根目录下的全局 shim**（`*.cmd`、`*.ps1` 和无扩展名文件，通常几十个），迁移时必须一并复制并重建。
+- **权限**：DSH 会话进程是 **Low 完整性**，写不了 `<NVM_HOME>`；安装、复制、切换要在一次 **UAC 提权进程**里完成。版本根目录 `nvm` 此前缺少当前用户写权限，必要时先补授权。
+- **禁止 `takeown`，`icacls` 只做追加授权**：迁移脚本若重建 DACL，会把 `.nodejs` 下文件改成只授权管理员会话的 Logon SID，DSH 受限令牌随后读不了 `pnpm.ps1` 等文件（表现为 `pnpm` 报 Access denied）。必须保证当前用户与 `Everyone` 对 `.nodejs` 下所有文件、`node_modules\pnpm` 等全局包目录有读取/执行权限。
+- **迁移后在普通非管理员 DSH 会话验证**（不能只在管理员窗口测）：`node -v`、`npm -v`、`pnpm -v`、`corepack`、`playwright-cli` 等都能运行。
+- 报 Access denied 时的急救（管理员执行，先把 `<NVM_HOME>` 换成实际根目录）：
+
+  ```powershell
+  icacls '<NVM_HOME>\.nodejs' /grant 'Everyone:(OI)(CI)(RX)' /T
+  icacls '<NVM_HOME>\.nodejs\node_modules\pnpm' /grant 'Everyone:(OI)(CI)(RX)' /T
+  ```
+
+- 迁移过程日志留在原迁移会话的临时目录，不随仓库提交。
+
 ## 编码与提交约定
 
 - 注释、文档、界面文案使用中文（与现有代码一致）。
