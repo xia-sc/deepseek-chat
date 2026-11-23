@@ -125,3 +125,18 @@
 - 注释、文档、界面文案使用中文（与现有代码一致）。
 - 不提交 `node_modules/`、`dist/`、`release/`、`release-app/`、`tmp/`、`*.log`。
 - 数据目录、打包输出目录都在工作区外，不要写进仓库。
+
+## 版本号规则（SemVer）
+
+本项目采用 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)，版本号写在 `package.json` 的 `version` 字段，格式为 `MAJOR.MINOR.PATCH`：
+
+- **MAJOR**：不兼容的变更。会话/配置数据结构、IndexedDB 库结构、本地数据目录布局有破坏性调整，或移除已有 API 时递增。
+- **MINOR**：向后兼容的新功能。新增供应商/模型能力、新增界面功能、新增构建目标等。
+- **PATCH**：向后兼容的缺陷修复、文档与打包脚本修正，不改变对外行为。
+
+补充约定：
+
+- 预发布用 `-beta.N` / `-rc.N`（如 `0.3.0-rc.1`），构建元数据用 `+N`（如 `0.3.0+20261123`），不进入正式发布。
+- 发版时只改 `package.json` 的 `version`；产物名由 electron-builder 的 `${version}` 自动带出，不要手改 `artifactName` 里的字面版本号。
+- 本 fork 与上游 `deepseek-ai/chat-demo` 的版本线相互独立：上游版本号（如 `0.1.3`）不覆盖 fork 版本，同步上游后按本次改动性质决定是否升 MINOR/PATCH，不要直接把上游版本号抄进来。
+- 同一版本号内不要重复发布不同内容：若同名产物已对外发布，重新打包前应先递增版本号。
