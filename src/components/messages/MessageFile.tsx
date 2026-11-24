@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { useUploads } from '../../services/attachments.js'
 import type { FileAttachment } from '../../services/chat/types.js'
+import { openImagePreview } from '../../services/imagePreview.js'
 import { IconPhotoErrorFill20, IconRefreshOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { FileCard } from '../files/FileCard.js'
@@ -112,9 +113,19 @@ export const MessageFile = ({
       )
     }
 
-    // 正常态：链接到原件
+    // 正常态：点开应用内大图预览（桌面壳不打开新窗口）
     return link ? (
-      <a className={clsx(styles.image, styles.imageThumb)} {...link} title={file.name}>
+      <a
+        className={clsx(styles.image, styles.imageThumb)}
+        {...link}
+        title={file.name}
+        onClick={(event) => {
+          event.preventDefault()
+          if (url) {
+            openImagePreview(url, file.name)
+          }
+        }}
+      >
         {preview}
       </a>
     ) : (
